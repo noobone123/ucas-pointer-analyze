@@ -22,7 +22,9 @@ using namespace llvm;
 
 
 struct LivenessInfo {
-   std::set<Instruction *> LiveVars;             /// Set of variables which are live
+   // Set of variables which are live
+   std::set<Instruction *> LiveVars; 
+
    LivenessInfo() : LiveVars() {}
    LivenessInfo(const LivenessInfo & info) : LiveVars(info.LiveVars) {}
   
@@ -45,6 +47,7 @@ inline raw_ostream &operator<<(raw_ostream &out, const LivenessInfo &info) {
 class LivenessVisitor : public DataflowVisitor<struct LivenessInfo> {
 public:
    LivenessVisitor() {}
+
    void merge(LivenessInfo * dest, const LivenessInfo & src) override {
        for (std::set<Instruction *>::const_iterator ii = src.LiveVars.begin(), 
             ie = src.LiveVars.end(); ii != ie; ++ii) {

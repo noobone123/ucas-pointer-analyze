@@ -31,6 +31,9 @@
 #include <llvm/Support/raw_ostream.h>
 
 #include "Liveness.h"
+
+#define DEBUG
+
 using namespace llvm;
 static ManagedStatic<LLVMContext> GlobalContext;
 static LLVMContext &getGlobalContext() { return *GlobalContext; }
@@ -49,17 +52,48 @@ struct EnableFunctionOptPass : public FunctionPass {
 
 char EnableFunctionOptPass::ID = 0;
 
+
+void debug_print_worklist(std::set<Function *> &work_list)
+{
+    errs() << "Functions in worklist:\n";
+    for (auto f : work_list) {
+        errs() << "Function: ";
+        errs() << f->getName().str();
+        errs() << "\n";
+    }
+    errs() << "=======================\n";
+}
+
+
 ///!TODO TO BE COMPLETED BY YOU FOR ASSIGNMENT 3
 struct FuncPtrPass : public ModulePass {
     static char ID; // Pass identification, replacement for typeid
     FuncPtrPass() : ModulePass(ID) {}
-
+    std::set<Function *> func_worklist;
 
     bool runOnModule(Module &M) override {
-        errs() << "Hello: ";
-        errs().write_escaped(M.getName()) << '\n';
-        // M.dump();
-        errs() << "------------------------------\n";
+        for (auto &F : M) {
+            if (F.isIntrinsic())
+                continue;
+            else
+                func_worklist.insert(&F);
+        }
+
+        LivenessVisitor my_visitor;
+        DataflowResult<LivenessInfo>::Type result;
+        LivenessInfo initval;
+
+        #ifdef DEBUG
+            debug_print_worklist(func_worklist);
+        #endif
+
+        while(!func_worklist.empty()) {
+            Function *F = *(func_worklist.begin());
+            func_worklist.erase(F);
+
+            compForwardDataflow(F, &my_visitor, &result, initval);
+        }
+
         return false;
     }
 };
@@ -100,10 +134,10 @@ int main(int argc, char **argv) {
    Passes.add(llvm::createPromoteMemoryToRegisterPass());
 
    /// Your pass to print Function and Call Instructions
-   Passes.add(new Liveness());
-   //Passes.add(new FuncPtrPass());
+   // Passes.add(new Liveness());
+   Passes.add(new FuncPtrPass());
    Passes.run(*M.get());
-#ifndef NDEBUG
-   system("pause");
-#endif
+// #ifndef NDEBUG
+//    system("pause");
+// #endif
 }
