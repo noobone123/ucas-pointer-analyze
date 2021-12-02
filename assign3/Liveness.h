@@ -19,7 +19,7 @@
 
 #include "Dataflow.h"
 
-// #define DEBUG
+#define DEBUG
 
 using namespace llvm;
 
@@ -165,7 +165,7 @@ public:
                 for (auto argmap : func_call_argmap) {
                     // if caller's argument appears in the valueset
                     // use callee's arg to replace caller's arg
-                    if (point_to_info.second.count(argmap.first) && !isa<Function>(argmap.first)) {
+                    if (point_to_info.second.count(argmap.first)) {
                         point_to_info.second.erase(argmap.first);
                         point_to_info.second.insert(argmap.second);
                     }
@@ -226,6 +226,81 @@ public:
         }
     }
 
+    void handler_gep_inst(GetElementPtrInst *gep_inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) {
+        dfval->point_to_set[gep_inst].clear();
+        // ptr operand is the second operand of GEP instruction
+        Value *ptr_operand = gep_inst->getPointerOperand();
+
+        #ifdef DEBUG
+            errs() << "Ptr operand of GEP_inst is: \n";
+            errs() << (*ptr_operand) << "\n";
+        #endif
+
+        if (dyn_cast<AllocaInst>(ptr_operand)) {
+            dfval->point_to_set[gep_inst].insert(ptr_operand);
+        } else {
+            
+        }
+        
+        #ifdef DEBUG
+            errs() << (*dfval) << "\n";
+        #endif
+    }
+
+    void handler_store_inst(StoreInst *store_inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) {
+        Value * value_op = store_inst->getValueOperand();
+        Value * pointer_op = store_inst->getPointerOperand();
+        #ifdef DEBUG
+            errs() << "Value Operand of Store inst: \n";
+            errs() << (*value_op) << "\n";
+            errs() << "Pointer Operand of Store inst: \n";
+            errs() << (*pointer_op) << "\n";
+        #endif
+        
+        value_set_type value_op_set;
+
+        // following snippets handle the value_op of store inst
+        // if stored value is a function pointer
+        if (auto func = dyn_cast<Function>(value_op)) {
+            value_op_set.insert(func);
+        } else {
+            // ...
+        }
+        
+        // following snippets handle the pointer_op of store inst
+        if (auto gep_inst = dyn_cast<GetElementPtrInst>(pointer_op)) {
+            Value *ptr_operand = gep_inst->getPointerOperand();
+            
+            dfval->point_to_set[gep_inst].clear();
+            dfval->point_to_set[gep_inst].insert(value_op_set.begin(), value_op_set.end());
+           
+        }
+
+        #ifdef DEBUG
+            errs() << (*dfval) << "\n";
+        #endif
+    }
+
+    void handler_load_inst(LoadInst *load_inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) {
+        Value* pointer_op = load_inst->getPointerOperand();
+
+        dfval->point_to_set[load_inst].clear();
+
+        #ifdef DEBUG
+            errs() << "Pointer Operand of load inst: \n";
+            errs() << (*pointer_op) << "\n";
+        #endif
+
+        if (auto gep_inst = dyn_cast<GetElementPtrInst>(pointer_op)) {
+            value_set_type value_op_set = dfval->point_to_set[gep_inst];
+            dfval->point_to_set[load_inst].insert(value_op_set.begin(), value_op_set.end());
+        }
+
+        #ifdef DEBUG
+            errs() << (*dfval) << "\n";
+        #endif
+    }
+
     void print_callee_result()
     {
         while(!callinst_func_map.empty()) {
@@ -261,6 +336,16 @@ public:
     void compDFVal(Instruction *inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) override {
         if (isa<DbgInfoIntrinsic>(inst)) return;
 
+        if (isa<IntrinsicInst>(inst)) {
+            if (auto *memset_inst = dyn_cast<MemSetInst>(inst)) {
+                #ifdef DEBUG
+                errs() << "---MemSet Inst---\n";
+                errs() << (*memset_inst) << "\n";
+                #endif
+                return;
+            }
+        }
+
         if (ReturnInst * ret_inst = dyn_cast<ReturnInst>(inst)) {
             #ifdef DEBUG
                 errs() << "---Return Inst---\n";
@@ -281,6 +366,27 @@ public:
                 errs() << (*phi_node) << "\n";
             #endif
             handle_phinode_inst(phi_node, dfval, result);
+        }
+        else if (GetElementPtrInst * gep_inst = dyn_cast<GetElementPtrInst>(inst)) {
+            #ifdef DEBUG
+                errs() << "---GetElementPtr Inst---\n";
+                errs() << (*gep_inst) << "\n";
+            #endif
+            handler_gep_inst(gep_inst, dfval, result);
+        }
+        else if (StoreInst *store_inst = dyn_cast<StoreInst>(inst)) {
+            #ifdef DEBUG
+                errs() << "---Store Inst---\n";
+                errs() << (*store_inst) << "\n";
+            #endif
+            handler_store_inst(store_inst, dfval, result);
+        }
+        else if (LoadInst *load_inst = dyn_cast<LoadInst>(inst)) {
+            #ifdef DEBUG
+                errs() << "---Load Inst---\n";
+                errs() << (*load_inst) << "\n";
+            #endif
+            handler_load_inst(load_inst, dfval, result);
         }
 
     }

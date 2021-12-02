@@ -15,7 +15,7 @@
 #include <llvm/IR/CFG.h>
 #include <llvm/IR/Function.h>
 
-// #define DEBUG
+#define DEBUG
 using namespace llvm;
 
 
