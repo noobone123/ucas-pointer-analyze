@@ -97,8 +97,12 @@ struct FuncPtrPass : public ModulePass {
             #endif
 
             compForwardDataflow(F, &my_visitor, &result, initval);
+
+            func_worklist.insert(my_visitor.callee_func_worklist.begin(), my_visitor.callee_func_worklist.end());
+            my_visitor.callee_func_worklist.clear();
         }
 
+        my_visitor.print_callee_result();
         return false;
     }
 };
