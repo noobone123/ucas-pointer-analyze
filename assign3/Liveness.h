@@ -19,7 +19,7 @@
 
 #include "Dataflow.h"
 
-#define DEBUG
+// #define DEBUG
 
 using namespace llvm;
 
@@ -40,14 +40,16 @@ struct LivenessInfo {
 inline raw_ostream& operator << (raw_ostream &out, const LivenessInfo &info) {
     out << "The Liveness info are: \n";
     for (auto i : info.point_to_set) {
-        out << "Instruction is: \n";
-        out << i.first;
-        out << "\nThe values are:\n";
+        out << "Value(Key): \n" << (*i.first) << "\n";
+        out << "ValueSet:\n";
         for (auto j : i.second) {
-            out << j;
+            if (auto func = dyn_cast<Function>(j))
+                out << func->getName().str();
+            else
+                out << *j;
             out << ", ";
         }
-        out << "\n------------------\n";
+        out << "\n------\n";
     }
     return out;
 }
@@ -74,20 +76,37 @@ public:
 
     void handle_call_inst(CallInst *call_inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) {
 
-        Value *v = call_inst->getCalledOperand();
+        Value *callee_value = call_inst->getCalledOperand();
 
         typename std::set<Function *> callees;
         
         // find all possible callees
-        if (auto func = dyn_cast<Function>(v)) {
+        if (auto func = dyn_cast<Function>(callee_value)) {
             #ifdef DEBUG
                 errs() << "CallEE is a function : " << func->getName().str() << "\n";
             #endif
             callees.insert(func);
         } else {
             #ifdef DEBUG
-                errs() << "CallEE is not a function : " << (*v) << "\n";
+                errs() << "CallEE is not a function : " << (*callee_value) << "\n";
             #endif
+            // if callee value exists
+            if (dfval->point_to_set.count(callee_value)) {
+                value_set_type possible_callee_set;
+                possible_callee_set.insert(dfval->point_to_set[callee_value].begin(), dfval->point_to_set[callee_value].end());
+                
+                while (!possible_callee_set.empty()) {
+                    Value* v = *(possible_callee_set.begin());
+                    possible_callee_set.erase(v);
+                    if (auto func = dyn_cast<Function>(v)) {
+                        callees.insert(func);
+                    } else {
+                        // if it is still a value, we need to find it recursively
+                        possible_callee_set.insert(dfval->point_to_set[v].begin(), dfval->point_to_set[v].end());
+                    }
+                }
+            }
+            
         }
 
         // update callinst_func_map
@@ -99,7 +118,6 @@ public:
         // just return
         if (call_inst->getCalledFunction() && call_inst->getCalledFunction()->isDeclaration())
             return;
-
         
         // if called function in defined in the module, then we need to do 
         // Interprocedural analysis
@@ -116,7 +134,7 @@ public:
             if (call_inst->getNumArgOperands() == 0)
                 continue;
 
-            // Handling argument pass
+            // Handling argument pass (only pointer)
             for (unsigned int i = 0; i < call_inst->getNumArgOperands(); i++) {
                 Value *caller_arg_value = call_inst->getArgOperand(i);
                 if (caller_arg_value->getType()->isPointerTy()) {
@@ -130,15 +148,19 @@ public:
 
             // get old callee inval
             BasicBlock* callee_first_bb = &(callee->getEntryBlock());
-            LivenessInfo callee_bb_inval = (*result)[callee_first_bb].first;
+            LivenessInfo &callee_bb_inval = (*result)[callee_first_bb].first;
             LivenessInfo old_callee_bb_inval = callee_bb_inval;
 
             // origin dfval should not modified here
             // we use a temp value to pass pointer-to-set to callee
+            // following is sensitive LivenessInfo from previous instructions
             LivenessInfo tmp_livenessinfo = *dfval;
 
-            // should update point_to_set of interprocedural analysis here
 
+            // should update point_to_set of interprocedural analysis here
+            // following code snippets are key process of interprocedural analysis
+
+            // first replace valueset if it is caller's arguments
             for (auto point_to_info : tmp_livenessinfo.point_to_set) {
                 for (auto argmap : func_call_argmap) {
                     // if caller's argument appears in the valueset
@@ -150,6 +172,7 @@ public:
                 }
             }
 
+            // then replace point_to_set's key if it is caller's arguments
             // if some current value pointer_to_info is passed into callee as an argument
             for (auto argmap : func_call_argmap) {
                 if (tmp_livenessinfo.point_to_set.count(argmap.first)) {
@@ -162,12 +185,22 @@ public:
 
             // if caller's arg is a function pointer 
             for (auto argmap : func_call_argmap) {
-                // let callee's arg point to caller's function pointer
+                // let callee's arg point to caller's function arg value
                 if (isa<Function>(argmap.first))
                     tmp_livenessinfo.point_to_set[argmap.second].insert(argmap.first);
             }
 
+            // #ifdef DEBUG
+            //     errs() << "Old callee_bb_inval is: \n";
+            //     errs() << old_callee_bb_inval;
+            // #endif
+
             merge(&callee_bb_inval, tmp_livenessinfo);
+
+            #ifdef DEBUG
+                errs() << "New callee_bb_inval is: \n";
+                errs() << callee_bb_inval;
+            #endif
 
             // if inval of bb changed, then add function to worklist
             if (old_callee_bb_inval == callee_bb_inval)
@@ -179,6 +212,18 @@ public:
 
     void handle_ret_inst(ReturnInst *ret_inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) {
         return;
+    }
+
+    void handle_phinode_inst(PHINode *phi_node_inst, LivenessInfo * dfval, DataflowResult<LivenessInfo>::Type *result) {
+        dfval->point_to_set[phi_node_inst].clear();
+        for (Value* value : phi_node_inst->incoming_values()) {
+            #ifdef DEBUG
+                errs() << "PhiNode values:\n";
+                errs() << (*value) << "\n";
+            #endif
+            if (auto func = dyn_cast<Function>(value))
+                dfval->point_to_set[phi_node_inst].insert(func);
+        }
     }
 
     void print_callee_result()
@@ -229,6 +274,13 @@ public:
                 errs() << (*call_inst) << "\n";
             #endif
             handle_call_inst(call_inst, dfval, result);
+        }
+        else if (PHINode * phi_node = dyn_cast<PHINode>(inst)) {
+            #ifdef DEBUG
+                errs() << "---PhiNode Inst---\n";
+                errs() << (*phi_node) << "\n";
+            #endif
+            handle_phinode_inst(phi_node, dfval, result);
         }
 
     }

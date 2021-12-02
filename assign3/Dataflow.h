@@ -15,7 +15,7 @@
 #include <llvm/IR/CFG.h>
 #include <llvm/IR/Function.h>
 
-#define DEBUG
+// #define DEBUG
 using namespace llvm;
 
 
@@ -72,14 +72,13 @@ public:
 };
 
 void debug_print_bbworklist(Function *fn, std::set<BasicBlock *> &worklist) {
-    errs() << "Basic Blocks in worklist:\n";
     errs() << "Function: ";
-    errs() << fn->getName().str();
-    errs() << "\n Basic blocks are: \n";
-    for (auto bi : worklist) {
-        errs() << (*bi);
-        errs() << "\n";
-    }
+    errs() << fn->getName().str() << "\n";
+    // errs() << "Basic Blocks in worklist:\n";
+    // for (auto bi : worklist) {
+    //     errs() << (*bi);
+    //     errs() << "\n";
+    // }
 }
 
 /// 

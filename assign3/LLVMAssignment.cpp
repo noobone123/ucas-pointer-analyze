@@ -32,7 +32,7 @@
 
 #include "Liveness.h"
 
-#define DEBUG
+// #define DEBUG
 
 using namespace llvm;
 static ManagedStatic<LLVMContext> GlobalContext;
