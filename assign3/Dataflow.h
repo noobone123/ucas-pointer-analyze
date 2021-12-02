@@ -18,48 +18,6 @@
 #define DEBUG
 using namespace llvm;
 
-///Base dataflow visitor class, defines the dataflow function
-
-template <class T>
-class DataflowVisitor {
-public:
-    virtual ~DataflowVisitor() { }
-
-    /// Dataflow Function invoked for each basic block 
-    /// 
-    /// @block the Basic Block
-    /// @dfval the input dataflow value
-    /// @isforward true to compute dfval forward, otherwise backward
-    virtual void compDFVal(BasicBlock *block, T *dfval, bool isforward) {
-        if (isforward == true) {
-           for (BasicBlock::iterator ii=block->begin(), ie=block->end(); 
-                ii!=ie; ++ii) {
-                Instruction * inst = &*ii;
-                compDFVal(inst, dfval);
-           }
-        } else {
-           for (BasicBlock::reverse_iterator ii=block->rbegin(), ie=block->rend();
-                ii != ie; ++ii) {
-                Instruction * inst = &*ii;
-                compDFVal(inst, dfval);
-           }
-        }
-    }
-
-    ///
-    /// Dataflow Function invoked for each instruction
-    ///
-    /// @inst the Instruction
-    /// @dfval the input dataflow value
-    /// @return true if dfval changed
-    virtual void compDFVal(Instruction *inst, T *dfval ) = 0;
-
-    ///
-    /// Merge of two dfvals, dest will be ther merged result
-    /// @return true if dest changed
-    ///
-    virtual void merge( T *dest, const T &src ) = 0;
-};
 
 ///
 /// Dummy class to provide a typedef for the detailed result set
@@ -70,6 +28,49 @@ struct DataflowResult {
     typedef typename std::map<BasicBlock *, std::pair<T, T> > Type;
 };
 
+
+///Base dataflow visitor class, defines the dataflow function
+template <class T>
+class DataflowVisitor {
+public:
+    virtual ~DataflowVisitor() { }
+
+    /// Dataflow Function invoked for each basic block 
+    /// 
+    /// @block the Basic Block
+    /// @dfval the input dataflow value
+    /// @isforward true to compute dfval forward, otherwise backward
+    virtual void compDFVal(BasicBlock *block, T* dfval ,typename DataflowResult<T>::Type *result, bool isforward) {
+        if (isforward == true) {
+           for (BasicBlock::iterator ii=block->begin(), ie=block->end(); 
+                ii!=ie; ++ii) {
+                Instruction * inst = &*ii;
+                compDFVal(inst, dfval, result);
+           }
+        } else {
+           for (BasicBlock::reverse_iterator ii=block->rbegin(), ie=block->rend();
+                ii != ie; ++ii) {
+                Instruction * inst = &*ii;
+                compDFVal(inst, dfval, result);
+           }
+        }
+    }
+
+    ///
+    /// Dataflow Function invoked for each instruction
+    ///
+    /// @inst the Instruction
+    /// @dfval the input dataflow value
+    /// @return true if dfval changed
+    virtual void compDFVal(Instruction *inst, T* dfval, typename DataflowResult<T>::Type *result) = 0;
+
+    ///
+    /// Merge of two dfvals, dest will be ther merged result
+    /// @return true if dest changed
+    ///
+    virtual void merge( T *dest, const T &src ) = 0;
+};
+
 void debug_print_bbworklist(Function *fn, std::set<BasicBlock *> &worklist) {
     errs() << "Basic Blocks in worklist:\n";
     errs() << "Function: ";
@@ -77,9 +78,8 @@ void debug_print_bbworklist(Function *fn, std::set<BasicBlock *> &worklist) {
     errs() << "\n Basic blocks are: \n";
     for (auto bi : worklist) {
         errs() << (*bi);
-        errs() << "\n --------------- \n";
+        errs() << "\n";
     }
-    errs() << "=======================\n";
 }
 
 /// 
@@ -124,13 +124,19 @@ void compForwardDataflow(Function *fn,
         }
 
         (*result)[bb].first = bbexitval;
-        visitor->compDFVal(bb, &bbexitval, true);
 
-        if (bbexitval == (*result)[bb].second) continue;
-        (*result)[bb].second = bbexitval;
+        T temp_val = (*result)[bb].first;
 
-        for (succ_iterator si = succ_begin(bb), se = succ_end(bb); si != se; si++) {
-            worklist.insert(*si);
+        visitor->compDFVal(bb, &temp_val, result, true);
+        
+        // 如果最后的 out 没有变化，那么则直接考虑下一个 BB
+        if (temp_val == (*result)[bb].second) {
+            continue;
+        } // 否则更新本次的 out，然后将改 BB 的后继 BB 加入 worklist 
+        else {
+            (*result)[bb].second = temp_val;
+            for (succ_iterator si = succ_begin(bb), se = succ_end(bb); si != se; si++)
+                worklist.insert(*si);
         }
     }
 
@@ -185,7 +191,7 @@ void compBackwardDataflow(Function *fn,
         // 根据正向传播与反向传播的不同会有不同的遍历方法
         // 根据上面的实现，应当是 flow-sensitive 的
         // 最后出来的这个 bbexitval 应当是通过反向传播变成 in 了?
-        visitor->compDFVal(bb, &bbexitval, false);
+        // visitor->compDFVal(bb, &bbexitval, false);
 
         // If outgoing value changed, propagate it along the CFG
         // if new_in == old_in，那么就不用更新了，也不用管前驱节点

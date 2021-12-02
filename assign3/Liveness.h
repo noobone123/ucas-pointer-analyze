@@ -18,73 +18,133 @@
 #include <llvm/IR/IntrinsicInst.h>
 
 #include "Dataflow.h"
+
+#define DEBUG
+
 using namespace llvm;
 
+using value_set_type = std::set<Value *>;
+using pointer_to_set_type = std::map<Instruction *, value_set_type>; 
 
 struct LivenessInfo {
-   // Set of variables which are live
-   std::set<Instruction *> LiveVars; 
+   pointer_to_set_type point_to_set;
 
-   LivenessInfo() : LiveVars() {}
-   LivenessInfo(const LivenessInfo & info) : LiveVars(info.LiveVars) {}
+   LivenessInfo() : point_to_set() {}
+   LivenessInfo(const LivenessInfo & info) : point_to_set(info.point_to_set) {}
   
    bool operator == (const LivenessInfo & info) const {
-       return LiveVars == info.LiveVars;
+       return point_to_set == info.point_to_set;
    }
 };
 
-inline raw_ostream &operator<<(raw_ostream &out, const LivenessInfo &info) {
-    for (std::set<Instruction *>::iterator ii=info.LiveVars.begin(), ie=info.LiveVars.end();
-         ii != ie; ++ ii) {
-       const Instruction * inst = *ii;
-       out << inst->getName();
-       out << " ";
+inline raw_ostream& operator << (raw_ostream &out, const LivenessInfo &info) {
+    out << "The Liveness info are: \n";
+    for (auto i : info.point_to_set) {
+        out << "Instruction is: \n";
+        out << i.first;
+        out << "\nThe values are:\n";
+        for (auto j : i.second) {
+            out << j;
+            out << ", ";
+        }
+        out << "\n------------------\n";
     }
     return out;
 }
 
-	
+// print callees
+inline raw_ostream& operator << (raw_ostream &out, const std::set<Function*> &callees) {
+    for (auto i : callees) {
+        out << i->getName().str() << " , ";
+    }
+    out << "\n";
+    return out;
+}
+
 class LivenessVisitor : public DataflowVisitor<struct LivenessInfo> {
 public:
-   LivenessVisitor() {}
+    LivenessVisitor() {}
 
-   void merge(LivenessInfo * dest, const LivenessInfo & src) override {
-       for (std::set<Instruction *>::const_iterator ii = src.LiveVars.begin(), 
-            ie = src.LiveVars.end(); ii != ie; ++ii) {
-           dest->LiveVars.insert(*ii);
-       }
-   }
+    BasicBlock* inst_to_basic(Instruction *inst) {
+        return inst->getParent();
+    }
 
-   void compDFVal(Instruction *inst, LivenessInfo * dfval) override{
+    void handle_call_inst(CallInst *call_inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) {
+        
+
+        Value *v = call_inst->getCalledOperand();
+
+        typename std::set<Function *> callees;
+
+        if (auto func = dyn_cast<Function>(v)) {
+            #ifdef DEBUG
+                errs() << "In handle_call_inst:\n Called Value is a function: \n";
+                errs() << func->getName().str() << "\n";
+            #endif
+            callees.insert(func);
+        } else {
+            #ifdef DEBUG
+                errs() << "In handle_call_inst:\n Called Value is not a function: \n";
+                errs() << *(v) << "\n";
+            #endif
+
+            if (call_inst->getCalledFunction()) {
+                errs() << "Called is a Function\n";
+            } else {
+                errs() << "Called is not a Function\n";
+            }
+        }
+
+
+
+    }
+
+    void handle_ret_inst(ReturnInst *ret_inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) {
+        return;
+    }
+
+    void merge(LivenessInfo * dest, const LivenessInfo & src) override {
+        pointer_to_set_type &temp_set = dest->point_to_set;
+        for (auto i : src.point_to_set)
+            temp_set[i.first].insert(i.second.begin(), i.second.end());
+    }
+
+    void compDFVal(Instruction *inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) override {
         if (isa<DbgInfoIntrinsic>(inst)) return;
-        dfval->LiveVars.erase(inst);
-        for(User::op_iterator oi = inst->op_begin(), oe = inst->op_end();
-            oi != oe; ++oi) {
-           Value * val = *oi;
-           if (isa<Instruction>(val)) 
-               dfval->LiveVars.insert(cast<Instruction>(val));
-       }
-   }
+
+        if (ReturnInst * ret_inst = dyn_cast<ReturnInst>(inst)) {
+            #ifdef DEBUG
+                errs() << "---Return Inst---\n";
+                errs() << (*ret_inst) << "\n";
+            #endif
+            handle_ret_inst(ret_inst, dfval, result);
+        }
+        else if (CallInst * call_inst = dyn_cast<CallInst>(inst)) {
+            #ifdef DEBUG
+                errs() << "---Call Inst---\n";
+                errs() << (*call_inst) << "\n";
+            #endif
+            handle_call_inst(call_inst, dfval, result);
+        }
+
+    }
 };
 
 
-class Liveness : public FunctionPass {
-public:
+// class Liveness : public FunctionPass {
+// public:
 
-   static char ID;
-   Liveness() : FunctionPass(ID) {} 
+//    static char ID;
+//    Liveness() : FunctionPass(ID) {} 
 
-   bool runOnFunction(Function &F) override {
-       // F.dump();
-       LivenessVisitor visitor;
-       DataflowResult<LivenessInfo>::Type result;
-       LivenessInfo initval;
+//    bool runOnFunction(Function &F) override {
+//        // F.dump();
+//        LivenessVisitor visitor;
+//        DataflowResult<LivenessInfo>::Type result;
+//        LivenessInfo initval;
 
-       compBackwardDataflow(&F, &visitor, &result, initval);
-       printDataflowResult<LivenessInfo>(errs(), result);
-       return false;
-   }
-};
-
-
-
+//        compBackwardDataflow(&F, &visitor, &result, initval);
+//        printDataflowResult<LivenessInfo>(errs(), result);
+//        return false;
+//    }
+// };

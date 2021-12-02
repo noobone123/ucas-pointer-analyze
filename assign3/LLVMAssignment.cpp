@@ -81,15 +81,20 @@ struct FuncPtrPass : public ModulePass {
 
         LivenessVisitor my_visitor;
         DataflowResult<LivenessInfo>::Type result;
-        LivenessInfo initval;
 
         #ifdef DEBUG
             debug_print_worklist(func_worklist);
         #endif
 
         while(!func_worklist.empty()) {
+            LivenessInfo initval;
+
             Function *F = *(func_worklist.begin());
             func_worklist.erase(F);
+
+            #ifdef DEBUG
+                errs() << "=======================\n";
+            #endif
 
             compForwardDataflow(F, &my_visitor, &result, initval);
         }
@@ -102,8 +107,8 @@ struct FuncPtrPass : public ModulePass {
 char FuncPtrPass::ID = 0;
 static RegisterPass<FuncPtrPass> X("funcptrpass", "Print function call instruction");
 
-char Liveness::ID = 0;
-static RegisterPass<Liveness> Y("liveness", "Liveness Dataflow Analysis");
+// char Liveness::ID = 0;
+// static RegisterPass<Liveness> Y("liveness", "Liveness Dataflow Analysis");
 
 static cl::opt<std::string>
 InputFilename(cl::Positional,
