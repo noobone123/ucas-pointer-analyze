@@ -61,7 +61,7 @@ void debug_print_worklist(std::set<Function *> &work_list)
         errs() << f->getName().str();
         errs() << "\n";
     }
-    errs() << "=======================\n";
+    errs() << "=================================================\n";
 }
 
 
@@ -91,10 +91,6 @@ struct FuncPtrPass : public ModulePass {
 
             Function *F = *(func_worklist.begin());
             func_worklist.erase(F);
-
-            #ifdef DEBUG
-                errs() << "=======================\n";
-            #endif
 
             compForwardDataflow(F, &my_visitor, &result, initval);
 

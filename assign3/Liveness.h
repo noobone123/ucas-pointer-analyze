@@ -221,8 +221,9 @@ public:
             merge(&callee_bb_inval, tmp_livenessinfo);
 
             #ifdef DEBUG
-                errs() << "New callee_bb_inval is: \n";
-                errs() << callee_bb_inval;
+                errs() << "\nNew Callee_bb_inval: \n";
+                errs() << callee_bb_inval << "\n";
+                errs() << "+++++++++++++\n";
             #endif
 
             // if inval of bb changed, then add function to worklist
@@ -231,9 +232,46 @@ public:
             else
                 callee_func_worklist.insert(callee);
         }
+
+        #ifdef DEBUG
+            errs() << "\nAt the end of Callinst handler\n";
+            errs() << (*dfval) << "\n";
+        #endif
     }
 
     void handle_ret_inst(ReturnInst *ret_inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) {
+        Function* callee_func = ret_inst->getFunction();
+        Value *ret_value = ret_inst->getReturnValue();
+
+        // get all call insts which called this function
+        std::set<CallInst*> call_inst_set;
+        for (auto map : callinst_func_map) {
+            if (map.second.count(callee_func))
+                call_inst_set.insert(map.first);
+        }
+
+        #ifdef DEBUG
+            errs() << "\nThe callinst that may call this function: \n";
+            for (auto inst : call_inst_set) {
+                errs() << (*inst) << "\n";
+            }
+            errs() << "\n";
+        #endif
+        
+        // for all callinst
+        for (auto call_inst : call_inst_set) {
+            // if ret value is a pointer
+            if (ret_value && ret_value->getType()->isPointerTy()) {
+                value_set_type tmp = dfval->point_to_set[ret_value];
+                dfval->point_to_set[call_inst].insert(tmp.begin(), tmp.end());
+                dfval->point_to_set.erase(ret_value);
+            }
+        }
+
+        #ifdef DEBUG
+            errs() << (*dfval) << "\n";
+        #endif
+
         return;
     }
 
@@ -244,9 +282,17 @@ public:
                 errs() << "PhiNode values:\n";
                 errs() << (*value) << "\n";
             #endif
-            if (auto func = dyn_cast<Function>(value))
+            // directly point to Function
+            if (auto func = dyn_cast<Function>(value)) {
                 dfval->point_to_set[phi_node_inst].insert(func);
+            } else {
+                value_set_type tmp = dfval->point_to_set[value];
+                dfval->point_to_set[phi_node_inst].insert(tmp.begin(), tmp.end());
+            }
         }
+        #ifdef DEBUG
+            errs() << (*dfval) << "\n";
+        #endif
     }
 
     void handler_gep_inst(GetElementPtrInst *gep_inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) {
@@ -413,14 +459,14 @@ public:
         if (isa<IntrinsicInst>(inst)) {
             if (auto *memset_inst = dyn_cast<MemSetInst>(inst)) {
                 #ifdef DEBUG
-                errs() << "---MemSet Inst---\n";
+                errs() << "\n++++++++++++ MemSet Inst ++++++++++++\n";
                 errs() << (*memset_inst) << "\n";
                 #endif
                 return;
             }
             else if (auto *memcpy_inst = dyn_cast<MemCpyInst>(inst)) {
                 #ifdef DEBUG
-                errs() << "---Memcpy Inst---\n";
+                errs() << "\n++++++++++++ Memcpy Inst ++++++++++++\n";
                 errs() << (*memcpy_inst) << "\n";
                 #endif
                 handle_memcpy_inst(memcpy_inst, dfval, result);
@@ -430,42 +476,42 @@ public:
 
         if (ReturnInst * ret_inst = dyn_cast<ReturnInst>(inst)) {
             #ifdef DEBUG
-                errs() << "---Return Inst---\n";
+                errs() << "\n++++++++++++ Return Inst ++++++++++++\n";
                 errs() << (*ret_inst) << "\n";
             #endif
             handle_ret_inst(ret_inst, dfval, result);
         }
         else if (CallInst * call_inst = dyn_cast<CallInst>(inst)) {
             #ifdef DEBUG
-                errs() << "---Call Inst---\n";
+                errs() << "\n++++++++++++ Call Inst ++++++++++++\n";
                 errs() << (*call_inst) << "\n";
             #endif
             handle_call_inst(call_inst, dfval, result);
         }
         else if (PHINode * phi_node = dyn_cast<PHINode>(inst)) {
             #ifdef DEBUG
-                errs() << "---PhiNode Inst---\n";
+                errs() << "\n++++++++++++ PhiNode Inst ++++++++++++\n";
                 errs() << (*phi_node) << "\n";
             #endif
             handle_phinode_inst(phi_node, dfval, result);
         }
         else if (GetElementPtrInst * gep_inst = dyn_cast<GetElementPtrInst>(inst)) {
             #ifdef DEBUG
-                errs() << "---GetElementPtr Inst---\n";
+                errs() << "\n++++++++++++ GetElementPtr Inst ++++++++++++\n";
                 errs() << (*gep_inst) << "\n";
             #endif
             handler_gep_inst(gep_inst, dfval, result);
         }
         else if (StoreInst *store_inst = dyn_cast<StoreInst>(inst)) {
             #ifdef DEBUG
-                errs() << "---Store Inst---\n";
+                errs() << "\n++++++++++++ Store Inst ++++++++++++\n";
                 errs() << (*store_inst) << "\n";
             #endif
             handler_store_inst(store_inst, dfval, result);
         }
         else if (LoadInst *load_inst = dyn_cast<LoadInst>(inst)) {
             #ifdef DEBUG
-                errs() << "---Load Inst---\n";
+                errs() << "\n++++++++++++ Load Inst ++++++++++++\n";
                 errs() << (*load_inst) << "\n";
             #endif
             handler_load_inst(load_inst, dfval, result);

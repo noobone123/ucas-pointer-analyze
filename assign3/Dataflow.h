@@ -72,8 +72,10 @@ public:
 };
 
 void debug_print_bbworklist(Function *fn, std::set<BasicBlock *> &worklist) {
+    errs() << "=======================\n";
     errs() << "Function: ";
     errs() << fn->getName().str() << "\n";
+    errs() << "=======================\n";
     // errs() << "Basic Blocks in worklist:\n";
     // for (auto bi : worklist) {
     //     errs() << (*bi);
