@@ -24,10 +24,10 @@
 using namespace llvm;
 
 using value_set_type = std::set<Value *>;
-using pointer_to_set_type = std::map<Value *, value_set_type>; 
+using pointer_to_set_type = std::map<Value *, value_set_type>;
 
 struct LivenessInfo {
-   pointer_to_set_type point_to_set;
+   pointer_to_set_type point_to_set; // structure for storing the point to information
 
    LivenessInfo() : point_to_set() {}
    LivenessInfo(const LivenessInfo & info) : point_to_set(info.point_to_set) {}
@@ -236,7 +236,9 @@ public:
             errs() << (*ptr_operand) << "\n";
         #endif
 
+        // if GEP from alloca inst
         if (dyn_cast<AllocaInst>(ptr_operand)) {
+            // just make map : GEP -> pointer
             dfval->point_to_set[gep_inst].insert(ptr_operand);
         } else {
             
@@ -268,12 +270,14 @@ public:
         }
         
         // following snippets handle the pointer_op of store inst
+        // we should be careful here !
+        // since what we want to implement is flow-sensitive and path-insensitive analysis
+        // So, it's important to identify which basic block the value contained in the pointer comes from
+        // if values comes from the same basicblock, then clear them, or reserve them
         if (auto gep_inst = dyn_cast<GetElementPtrInst>(pointer_op)) {
             Value *ptr_operand = gep_inst->getPointerOperand();
-            
-            dfval->point_to_set[gep_inst].clear();
-            dfval->point_to_set[gep_inst].insert(value_op_set.begin(), value_op_set.end());
-           
+            dfval->point_to_set[ptr_operand].clear();
+            dfval->point_to_set[ptr_operand].insert(value_op_set.begin(), value_op_set.end());
         }
 
         #ifdef DEBUG
@@ -292,8 +296,12 @@ public:
         #endif
 
         if (auto gep_inst = dyn_cast<GetElementPtrInst>(pointer_op)) {
-            value_set_type value_op_set = dfval->point_to_set[gep_inst];
-            dfval->point_to_set[load_inst].insert(value_op_set.begin(), value_op_set.end());
+            Value *ptr_operand = gep_inst->getPointerOperand();
+
+            if (dyn_cast<AllocaInst>(ptr_operand)) {
+                value_set_type tmp = dfval->point_to_set[ptr_operand];
+                dfval->point_to_set[load_inst].insert(tmp.begin(), tmp.end());
+            }
         }
 
         #ifdef DEBUG
@@ -329,7 +337,9 @@ public:
 
     void merge(LivenessInfo * dest, const LivenessInfo & src) override {
         for (auto point_to_info : src.point_to_set) {
-            dest->point_to_set[point_to_info.first].insert(point_to_info.second.begin(), point_to_info.second.end());
+            Value* key = point_to_info.first;
+            value_set_type tmp = point_to_info.second;
+            dest->point_to_set[key].insert(tmp.begin(), tmp.end());
         }
     }
 
