@@ -74,6 +74,29 @@ public:
         return inst->getParent();
     }
 
+    void expand_alloca(LivenessInfo *dfval, Instruction *inst) {
+        while (true) {
+            bool has_alloca_inst = false;
+            AllocaInst* tmp_inst;
+            value_set_type tmp_val_set;
+            for (auto v : dfval->point_to_set[inst]) {
+                if (auto alloca = dyn_cast<AllocaInst>(v)) {
+                    has_alloca_inst = true;
+                    tmp_inst = alloca;
+                    tmp_val_set = dfval->point_to_set[v];
+                    break;
+                }
+            }
+
+            if (has_alloca_inst) {
+                dfval->point_to_set[inst].erase(tmp_inst);
+                dfval->point_to_set[inst].insert(tmp_val_set.begin(), tmp_val_set.end());
+            } else {
+                break;
+            }
+        }
+    }
+
     void handle_call_inst(CallInst *call_inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) {
 
         Value *callee_value = call_inst->getCalledOperand();
@@ -241,7 +264,8 @@ public:
             // just make map : GEP -> pointer
             dfval->point_to_set[gep_inst].insert(ptr_operand);
         } else {
-            
+            value_set_type tmp = dfval->point_to_set[ptr_operand];
+            dfval->point_to_set[gep_inst].insert(tmp.begin(), tmp.end());
         }
         
         #ifdef DEBUG
@@ -266,18 +290,25 @@ public:
         if (auto func = dyn_cast<Function>(value_op)) {
             value_op_set.insert(func);
         } else {
-            // ...
+            value_set_type tmp = dfval->point_to_set[value_op];
+            value_op_set.insert(tmp.begin(), tmp.end());
+        }
+
+        // if value_op is a allocinst and no values are filled in
+        // then just fill the value_op in
+        if (dyn_cast<AllocaInst>(value_op) && value_op_set.empty()) {
+            value_op_set.insert(value_op);
         }
         
         // following snippets handle the pointer_op of store inst
-        // we should be careful here !
-        // since what we want to implement is flow-sensitive and path-insensitive analysis
-        // So, it's important to identify which basic block the value contained in the pointer comes from
-        // if values comes from the same basicblock, then clear them, or reserve them
+        // we should be careful here since what we want to implement is flow-sensitive and path-insensitive analysis
         if (auto gep_inst = dyn_cast<GetElementPtrInst>(pointer_op)) {
             Value *ptr_operand = gep_inst->getPointerOperand();
             dfval->point_to_set[ptr_operand].clear();
             dfval->point_to_set[ptr_operand].insert(value_op_set.begin(), value_op_set.end());
+        } else {
+            dfval->point_to_set[pointer_op].clear();
+            dfval->point_to_set[pointer_op].insert(value_op_set.begin(), value_op_set.end());
         }
 
         #ifdef DEBUG
@@ -301,7 +332,40 @@ public:
             if (dyn_cast<AllocaInst>(ptr_operand)) {
                 value_set_type tmp = dfval->point_to_set[ptr_operand];
                 dfval->point_to_set[load_inst].insert(tmp.begin(), tmp.end());
+                // convert alloca_inst in point_to_set[load_inst]
+                expand_alloca(dfval, load_inst);
+            } else {
+                value_set_type tmp = dfval->point_to_set[ptr_operand];
+                dfval->point_to_set[load_inst].insert(tmp.begin(), tmp.end());
             }
+
+        } else {
+            value_set_type tmp = dfval->point_to_set[pointer_op];
+            dfval->point_to_set[load_inst].insert(tmp.begin(), tmp.end());
+        }
+
+        #ifdef DEBUG
+            errs() << (*dfval) << "\n";
+        #endif
+    }
+
+    void handle_memcpy_inst(MemCpyInst* inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) {
+        Value* dest_op = inst->getArgOperand(0);
+        Value* src_op = inst->getArgOperand(1);
+        if (dest_op && dest_op) {
+            while(auto bitcast_inst = dyn_cast<BitCastInst>(dest_op))
+                dest_op = bitcast_inst->getOperand(0);
+            while(auto bitcast_inst = dyn_cast<BitCastInst>(src_op))
+                src_op = bitcast_inst->getOperand(0);
+
+            #ifdef DEBUG
+                errs() << "Dest value is: \n" << (*dest_op) << "\n";
+                errs() << "Src value is: \n" << (*src_op) << "\n";
+            #endif
+
+            dfval->point_to_set[dest_op].clear();
+            value_set_type tmp = dfval->point_to_set[src_op];
+            dfval->point_to_set[dest_op].insert(tmp.begin(), tmp.end());
         }
 
         #ifdef DEBUG
@@ -352,6 +416,14 @@ public:
                 errs() << "---MemSet Inst---\n";
                 errs() << (*memset_inst) << "\n";
                 #endif
+                return;
+            }
+            else if (auto *memcpy_inst = dyn_cast<MemCpyInst>(inst)) {
+                #ifdef DEBUG
+                errs() << "---Memcpy Inst---\n";
+                errs() << (*memcpy_inst) << "\n";
+                #endif
+                handle_memcpy_inst(memcpy_inst, dfval, result);
                 return;
             }
         }
