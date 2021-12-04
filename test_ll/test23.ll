@@ -125,7 +125,7 @@ attributes #3 = { nounwind }
 !llvm.ident = !{!12}
 
 !0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "clang version 11.0.0 (https://github.com/llvm/llvm-project.git 0160ad802e899c2922bc9b29564080c22eb0908c)", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, enums: !2, retainedTypes: !3, splitDebugInlining: false, nameTableKind: None)
-!1 = !DIFile(filename: "test23.c", directory: "/home/hikonaka/compiler_2021/hw_3/assign3-test0_29")
+!1 = !DIFile(filename: "test23.c", directory: "/home/hikonaka/compiler_2021/hw_3/assign3/assign3-test0_29")
 !2 = !{}
 !3 = !{!4}
 !4 = !DIDerivedType(tag: DW_TAG_pointer_type, baseType: !5, size: 64)
