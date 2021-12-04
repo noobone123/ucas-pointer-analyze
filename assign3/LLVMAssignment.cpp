@@ -32,7 +32,7 @@
 
 #include "Liveness.h"
 
-#define DEBUG
+// #define DEBUG
 
 using namespace llvm;
 static ManagedStatic<LLVMContext> GlobalContext;
@@ -136,6 +136,7 @@ int main(int argc, char **argv) {
    Passes.add(new EnableFunctionOptPass());
 #endif
    ///Transform it to SSA
+   Passes.add(new EnableFunctionOptPass());
    Passes.add(llvm::createPromoteMemoryToRegisterPass());
 
    /// Your pass to print Function and Call Instructions
