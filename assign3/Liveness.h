@@ -438,6 +438,16 @@ public:
             Value *ptr_operand = gep_inst->getPointerOperand();
             dfval->point_to_set[ptr_operand].clear();
             dfval->point_to_set[ptr_operand].insert(value_op_set.begin(), value_op_set.end());
+
+            // if there are any other points which point to the alloca_area
+            // then update all of them
+            for (auto &point_to_map : dfval->point_to_set) {
+                if (point_to_map.second.count(ptr_operand)) {
+                    point_to_map.second.insert(value_op_set.begin(), value_op_set.end());
+                    point_to_map.second.erase(ptr_operand);
+                }
+            }
+
         } else {
             dfval->point_to_set[pointer_op].clear();
             dfval->point_to_set[pointer_op].insert(value_op_set.begin(), value_op_set.end());

@@ -1,3 +1,5 @@
 *.rar
 *.zip
 build
+ground-truth
+bc
