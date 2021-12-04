@@ -63,13 +63,25 @@ inline raw_ostream& operator << (raw_ostream &out, const std::set<Function*> &ca
     return out;
 }
 
+inline raw_ostream& operator << (raw_ostream &out, const value_set_type value_set) {
+    for (auto j : value_set) {
+        if (auto func = dyn_cast<Function>(j))
+            out << func->getName().str();
+        else
+            out << *j;
+        out << ", ";
+    }
+    errs() << "\n";
+    return out;
+}
+
 class LivenessVisitor : public DataflowVisitor<struct PointToInfo> {
 public:
     std::map<CallInst*, std::set<Function*> > callinst_func_map;
     std::set<Function *> func_worklist;
     
     // merged_outval_set will be updated by ret_inst
-    std::map<CallInst*, PointToInfo> merged_outval_set;
+    std::map<Function*, PointToInfo> merged_outval_set;
     // following set stores the origin callinst_outval_set
     std::map<CallInst*, PointToInfo> callinst_outval_set;
 
@@ -151,6 +163,8 @@ public:
         
         // if called function in defined in the module, then we need to do 
         // Interprocedural analysis
+        PointToInfo all_possible_info;
+
         for (auto callee : callees) {
             #ifdef DEBUG
                 errs() << "Handling interprocedural analysis ...\n";
@@ -233,18 +247,18 @@ public:
                 errs() << "+++++++++++++\n";
             #endif
 
+            // for every possible callee, we should merge possible result
+            PointToInfo merged_info = merged_outval_set[callee];
+            merge(&all_possible_info, merged_info);
+
             // if inval of bb changed, then add function to worklist
             if (old_callee_bb_inval == callee_bb_inval)
                 continue;
             else
                 func_worklist.insert(callee);
         }
-        
-        // merge the call_inst's outdfval from ret_inst
-        PointToInfo point_to_info_from_retInst = merged_outval_set[call_inst];
 
-        if (!(point_to_info_from_retInst == (*dfval)))
-            merge(dfval, point_to_info_from_retInst);
+        *dfval = all_possible_info;
         
         callinst_outval_set[call_inst] = *dfval;
 
@@ -279,12 +293,18 @@ public:
         #endif
         
         // for all callinst
+
         for (auto call_inst : call_inst_set) {
+            // tmp_point_to_info for save changed point arg values
+            PointToInfo tmp_point_to_info;
             Function* callee = ret_inst->getFunction();
 
             // if ret value is a pointer
             if (ret_value && ret_value->getType()->isPointerTy()) {
                 value_set_type tmp = dfval->point_to_set[ret_value];
+
+                // tmp_point_to_info.point_to_set[call_inst].insert(tmp.begin(), tmp.end());
+
                 dfval->point_to_set[call_inst].insert(tmp.begin(), tmp.end());
                 dfval->point_to_set.erase(ret_value);
             }
@@ -305,6 +325,8 @@ public:
                     if (point_to_map.second.count(arg_map.second)) {
                         point_to_map.second.erase(arg_map.second);
                         point_to_map.second.insert(arg_map.first);
+
+                        // tmp_point_to_info.point_to_set.insert(point_to_map);
                     }
                 }
             }
@@ -312,14 +334,20 @@ public:
             for (auto arg_map : caller_callee_arg_map) {
                 if (dfval->point_to_set.count(arg_map.second)) {
                     value_set_type tmp = dfval->point_to_set[arg_map.second];
+                    // tmp_point_to_info.point_to_set[arg_map.first].insert(tmp.begin(), tmp.end());
                     dfval->point_to_set[arg_map.first].insert(tmp.begin(), tmp.end());
                     dfval->point_to_set.erase(arg_map.second);
                 }
             }
 
-            merged_outval_set[call_inst] = (*dfval);
+            merge(&(merged_outval_set[callee]) , (*dfval));
 
-            if (!(merged_outval_set[call_inst] == callinst_outval_set[call_inst]))
+            #ifdef DEBUG
+                errs() << "Merged callee data: \n";
+                errs() << merged_outval_set[callee] << "\n";
+            #endif
+
+            if (!(merged_outval_set[callee] == callinst_outval_set[call_inst]))
                 func_worklist.insert(call_inst->getFunction());
         }
 
