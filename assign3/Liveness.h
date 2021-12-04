@@ -26,18 +26,18 @@ using namespace llvm;
 using value_set_type = std::set<Value *>;
 using pointer_to_set_type = std::map<Value *, value_set_type>;
 
-struct LivenessInfo {
+struct PointToInfo {
    pointer_to_set_type point_to_set; // structure for storing the point to information
 
-   LivenessInfo() : point_to_set() {}
-   LivenessInfo(const LivenessInfo & info) : point_to_set(info.point_to_set) {}
+   PointToInfo() : point_to_set() {}
+   PointToInfo(const PointToInfo & info) : point_to_set(info.point_to_set) {}
   
-   bool operator == (const LivenessInfo & info) const {
+   bool operator == (const PointToInfo & info) const {
        return point_to_set == info.point_to_set;
    }
 };
 
-inline raw_ostream& operator << (raw_ostream &out, const LivenessInfo &info) {
+inline raw_ostream& operator << (raw_ostream &out, const PointToInfo &info) {
     out << "The Liveness info are: \n";
     for (auto i : info.point_to_set) {
         out << "Value(Key): \n" << (*i.first) << "\n";
@@ -63,18 +63,23 @@ inline raw_ostream& operator << (raw_ostream &out, const std::set<Function*> &ca
     return out;
 }
 
-class LivenessVisitor : public DataflowVisitor<struct LivenessInfo> {
+class LivenessVisitor : public DataflowVisitor<struct PointToInfo> {
 public:
     std::map<CallInst*, std::set<Function*> > callinst_func_map;
-    std::set<Function *> callee_func_worklist;
+    std::set<Function *> func_worklist;
+    
+    // merged_outval_set will be updated by ret_inst
+    std::map<CallInst*, PointToInfo> merged_outval_set;
+    // following set stores the origin callinst_outval_set
+    std::map<CallInst*, PointToInfo> callinst_outval_set;
 
-    LivenessVisitor() : callinst_func_map(), callee_func_worklist() {}
+    LivenessVisitor() : callinst_func_map(), func_worklist() {}
 
     BasicBlock* inst_to_basic(Instruction *inst) {
         return inst->getParent();
     }
 
-    void expand_alloca(LivenessInfo *dfval, Instruction *inst) {
+    void expand_alloca(PointToInfo *dfval, Instruction *inst) {
         while (true) {
             bool has_alloca_inst = false;
             AllocaInst* tmp_inst;
@@ -97,7 +102,9 @@ public:
         }
     }
 
-    void handle_call_inst(CallInst *call_inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) {
+
+    // in our algorithm, handle_call_inst will update callee's entry point_to_set,
+    void handle_call_inst(CallInst *call_inst, PointToInfo* dfval, DataflowResult<PointToInfo>::Type *result) {
 
         Value *callee_value = call_inst->getCalledOperand();
 
@@ -171,20 +178,20 @@ public:
 
             // get old callee inval
             BasicBlock* callee_first_bb = &(callee->getEntryBlock());
-            LivenessInfo &callee_bb_inval = (*result)[callee_first_bb].first;
-            LivenessInfo old_callee_bb_inval = callee_bb_inval;
+            PointToInfo &callee_bb_inval = (*result)[callee_first_bb].first;
+            PointToInfo old_callee_bb_inval = callee_bb_inval;
 
             // origin dfval should not modified here
             // we use a temp value to pass pointer-to-set to callee
-            // following is sensitive LivenessInfo from previous instructions
-            LivenessInfo tmp_livenessinfo = *dfval;
+            // following is sensitive PointToInfo from previous instructions
+            PointToInfo tmp_PointToInfo = *dfval;
 
 
             // should update point_to_set of interprocedural analysis here
             // following code snippets are key process of interprocedural analysis
 
             // first replace valueset if it is caller's arguments
-            for (auto point_to_info : tmp_livenessinfo.point_to_set) {
+            for (auto point_to_info : tmp_PointToInfo.point_to_set) {
                 for (auto argmap : func_call_argmap) {
                     // if caller's argument appears in the valueset
                     // use callee's arg to replace caller's arg
@@ -198,11 +205,11 @@ public:
             // then replace point_to_set's key if it is caller's arguments
             // if some current value pointer_to_info is passed into callee as an argument
             for (auto argmap : func_call_argmap) {
-                if (tmp_livenessinfo.point_to_set.count(argmap.first)) {
-                    value_set_type values = tmp_livenessinfo.point_to_set[argmap.first];
-                    tmp_livenessinfo.point_to_set.erase(argmap.first);
+                if (tmp_PointToInfo.point_to_set.count(argmap.first)) {
+                    value_set_type values = tmp_PointToInfo.point_to_set[argmap.first];
+                    tmp_PointToInfo.point_to_set.erase(argmap.first);
                     // insert caller arg's value set to callee arg's value set
-                    tmp_livenessinfo.point_to_set[argmap.second].insert(values.begin(), values.end());
+                    tmp_PointToInfo.point_to_set[argmap.second].insert(values.begin(), values.end());
                 }
             }
 
@@ -210,7 +217,7 @@ public:
             for (auto argmap : func_call_argmap) {
                 // let callee's arg point to caller's function arg value
                 if (isa<Function>(argmap.first))
-                    tmp_livenessinfo.point_to_set[argmap.second].insert(argmap.first);
+                    tmp_PointToInfo.point_to_set[argmap.second].insert(argmap.first);
             }
 
             // #ifdef DEBUG
@@ -218,7 +225,7 @@ public:
             //     errs() << old_callee_bb_inval;
             // #endif
 
-            merge(&callee_bb_inval, tmp_livenessinfo);
+            merge(&callee_bb_inval, tmp_PointToInfo);
 
             #ifdef DEBUG
                 errs() << "\nNew Callee_bb_inval: \n";
@@ -230,16 +237,29 @@ public:
             if (old_callee_bb_inval == callee_bb_inval)
                 continue;
             else
-                callee_func_worklist.insert(callee);
+                func_worklist.insert(callee);
         }
+        
+        // merge the call_inst's outdfval from ret_inst
+        PointToInfo point_to_info_from_retInst = merged_outval_set[call_inst];
+
+        if (!(point_to_info_from_retInst == (*dfval)))
+            merge(dfval, point_to_info_from_retInst);
+        
+        callinst_outval_set[call_inst] = *dfval;
 
         #ifdef DEBUG
+            errs() << "\nAdded func worklist are: ";
+            errs() << func_worklist;
             errs() << "\nAt the end of Callinst handler\n";
             errs() << (*dfval) << "\n";
         #endif
     }
 
-    void handle_ret_inst(ReturnInst *ret_inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) {
+
+    // handle ret inst, propagate dfval to call_inst
+    // if point_to_set of call_inst is changed, then insert caller function into worklist
+    void handle_ret_inst(ReturnInst *ret_inst, PointToInfo* dfval, DataflowResult<PointToInfo>::Type *result) {
         Function* callee_func = ret_inst->getFunction();
         Value *ret_value = ret_inst->getReturnValue();
 
@@ -260,22 +280,60 @@ public:
         
         // for all callinst
         for (auto call_inst : call_inst_set) {
+            Function* callee = ret_inst->getFunction();
+
             // if ret value is a pointer
             if (ret_value && ret_value->getType()->isPointerTy()) {
                 value_set_type tmp = dfval->point_to_set[ret_value];
                 dfval->point_to_set[call_inst].insert(tmp.begin(), tmp.end());
                 dfval->point_to_set.erase(ret_value);
             }
+            
+            // map args
+            std::map<Value*, Argument *> caller_callee_arg_map;
+            for (unsigned int i = 0; i < call_inst->getNumArgOperands(); i++) {
+                Value *caller_arg = call_inst->getArgOperand(i);
+                if (caller_arg->getType()->isPointerTy()) {
+                    Argument *callee_arg = callee->arg_begin() + i;
+                    caller_callee_arg_map.insert(std::make_pair(caller_arg, callee_arg));
+                }
+            }
+
+            // replace back
+            for (auto point_to_map : dfval->point_to_set) {
+                for (auto arg_map : caller_callee_arg_map) {
+                    if (point_to_map.second.count(arg_map.second)) {
+                        point_to_map.second.erase(arg_map.second);
+                        point_to_map.second.insert(arg_map.first);
+                    }
+                }
+            }
+
+            for (auto arg_map : caller_callee_arg_map) {
+                if (dfval->point_to_set.count(arg_map.second)) {
+                    value_set_type tmp = dfval->point_to_set[arg_map.second];
+                    dfval->point_to_set[arg_map.first].insert(tmp.begin(), tmp.end());
+                    dfval->point_to_set.erase(arg_map.second);
+                }
+            }
+
+            merged_outval_set[call_inst] = (*dfval);
+
+            if (!(merged_outval_set[call_inst] == callinst_outval_set[call_inst]))
+                func_worklist.insert(call_inst->getFunction());
         }
 
         #ifdef DEBUG
+            errs() << "\nAdded func worklist are: ";
+            errs() << func_worklist;
+            errs() << "\nAt the end of Ret_inst" << "\n";
             errs() << (*dfval) << "\n";
         #endif
 
         return;
     }
 
-    void handle_phinode_inst(PHINode *phi_node_inst, LivenessInfo * dfval, DataflowResult<LivenessInfo>::Type *result) {
+    void handle_phinode_inst(PHINode *phi_node_inst, PointToInfo * dfval, DataflowResult<PointToInfo>::Type *result) {
         dfval->point_to_set[phi_node_inst].clear();
         for (Value* value : phi_node_inst->incoming_values()) {
             #ifdef DEBUG
@@ -295,7 +353,7 @@ public:
         #endif
     }
 
-    void handler_gep_inst(GetElementPtrInst *gep_inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) {
+    void handler_gep_inst(GetElementPtrInst *gep_inst, PointToInfo* dfval, DataflowResult<PointToInfo>::Type *result) {
         dfval->point_to_set[gep_inst].clear();
         // ptr operand is the second operand of GEP instruction
         Value *ptr_operand = gep_inst->getPointerOperand();
@@ -319,7 +377,7 @@ public:
         #endif
     }
 
-    void handler_store_inst(StoreInst *store_inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) {
+    void handler_store_inst(StoreInst *store_inst, PointToInfo* dfval, DataflowResult<PointToInfo>::Type *result) {
         Value * value_op = store_inst->getValueOperand();
         Value * pointer_op = store_inst->getPointerOperand();
         #ifdef DEBUG
@@ -362,7 +420,7 @@ public:
         #endif
     }
 
-    void handler_load_inst(LoadInst *load_inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) {
+    void handler_load_inst(LoadInst *load_inst, PointToInfo* dfval, DataflowResult<PointToInfo>::Type *result) {
         Value* pointer_op = load_inst->getPointerOperand();
 
         dfval->point_to_set[load_inst].clear();
@@ -395,7 +453,7 @@ public:
         #endif
     }
 
-    void handle_memcpy_inst(MemCpyInst* inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) {
+    void handle_memcpy_inst(MemCpyInst* inst, PointToInfo* dfval, DataflowResult<PointToInfo>::Type *result) {
         Value* dest_op = inst->getArgOperand(0);
         Value* src_op = inst->getArgOperand(1);
         if (dest_op && dest_op) {
@@ -445,7 +503,7 @@ public:
         }
     }
 
-    void merge(LivenessInfo * dest, const LivenessInfo & src) override {
+    void merge(PointToInfo * dest, const PointToInfo & src) override {
         for (auto point_to_info : src.point_to_set) {
             Value* key = point_to_info.first;
             value_set_type tmp = point_to_info.second;
@@ -453,7 +511,7 @@ public:
         }
     }
 
-    void compDFVal(Instruction *inst, LivenessInfo* dfval, DataflowResult<LivenessInfo>::Type *result) override {
+    void compDFVal(Instruction *inst, PointToInfo* dfval, DataflowResult<PointToInfo>::Type *result) override {
         if (isa<DbgInfoIntrinsic>(inst)) return;
 
         if (isa<IntrinsicInst>(inst)) {

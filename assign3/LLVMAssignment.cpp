@@ -80,22 +80,22 @@ struct FuncPtrPass : public ModulePass {
         }
 
         LivenessVisitor my_visitor;
-        DataflowResult<LivenessInfo>::Type result;
+        DataflowResult<PointToInfo>::Type result;
 
         #ifdef DEBUG
             debug_print_worklist(func_worklist);
         #endif
 
         while(!func_worklist.empty()) {
-            LivenessInfo initval;
+            PointToInfo initval;
 
             Function *F = *(func_worklist.begin());
             func_worklist.erase(F);
 
             compForwardDataflow(F, &my_visitor, &result, initval);
 
-            func_worklist.insert(my_visitor.callee_func_worklist.begin(), my_visitor.callee_func_worklist.end());
-            my_visitor.callee_func_worklist.clear();
+            func_worklist.insert(my_visitor.func_worklist.begin(), my_visitor.func_worklist.end());
+            my_visitor.func_worklist.clear();
         }
 
         my_visitor.print_callee_result();
