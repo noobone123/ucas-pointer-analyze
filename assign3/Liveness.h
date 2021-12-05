@@ -19,7 +19,7 @@
 
 #include "Dataflow.h"
 
-// #define DEBUG
+#define DEBUG
 
 using namespace llvm;
 
@@ -435,9 +435,30 @@ public:
         // following snippets handle the pointer_op of store inst
         // we should be careful here since what we want to implement is flow-sensitive and path-insensitive analysis
         if (auto gep_inst = dyn_cast<GetElementPtrInst>(pointer_op)) {
+            
+            dfval->point_to_set[pointer_op].clear();
+            dfval->point_to_set[pointer_op].insert(value_op_set.begin(), value_op_set.end());
+
             Value *ptr_operand = gep_inst->getPointerOperand();
-            dfval->point_to_set[ptr_operand].clear();
-            dfval->point_to_set[ptr_operand].insert(value_op_set.begin(), value_op_set.end());
+
+            while (true) {
+                dfval->point_to_set[ptr_operand].clear();
+                dfval->point_to_set[ptr_operand].insert(value_op_set.begin(), value_op_set.end());
+
+                if (dyn_cast<AllocaInst>(ptr_operand)) 
+                    break;
+                else if (auto tmp = dyn_cast<LoadInst>(ptr_operand))
+                    ptr_operand = tmp->getPointerOperand();
+                else if (auto tmp = dyn_cast<GetElementPtrInst>(ptr_operand))
+                    ptr_operand = tmp->getPointerOperand();
+                else
+                    break;
+
+                #ifdef DEBUG
+                errs() << "In store debug: \n" << (*ptr_operand) << "\n";
+                #endif
+            }
+            
 
             // if there are any other points which point to the alloca_area
             // then update all of them
