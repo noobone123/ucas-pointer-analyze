@@ -468,10 +468,14 @@ public:
 
             else if (!dfval->point_to_set[v].empty()) {
                 for (auto x : dfval->point_to_set[v]) {
-                    if (dyn_cast<AllocaInst>(x) || dyn_cast<BitCastInst>(x)) {
-                        dfval->point_to_set[x].clear();
-                        dfval->point_to_set[x].insert(value_op_set.begin(), value_op_set.end());
-                    } else if (dyn_cast<Function>(x)) {
+                    // if (dyn_cast<AllocaInst>(x) || dyn_cast<BitCastInst>(x)) {
+                    //     dfval->point_to_set[x].clear();
+                    //     dfval->point_to_set[x].insert(value_op_set.begin(), value_op_set.end());
+                    // } else if (dyn_cast<Function>(x)) {
+                    //     dfval->point_to_set[v].clear();
+                    //     dfval->point_to_set[v].insert(value_op_set.begin(), value_op_set.end());
+                    // }
+                    if (dyn_cast<Function>(x)) {
                         dfval->point_to_set[v].clear();
                         dfval->point_to_set[v].insert(value_op_set.begin(), value_op_set.end());
                     }
