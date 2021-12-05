@@ -402,7 +402,7 @@ public:
         if (dfval->point_to_set[ptr_operand].empty()) {
             dfval->point_to_set[gep_inst].insert(ptr_operand);
         } else {
-            if (dyn_cast<AllocaInst>(ptr_operand) || dyn_cast<BitCastInst>(ptr_operand)) {
+            if (dyn_cast<AllocaInst>(ptr_operand) || dyn_cast<BitCastInst>(ptr_operand) || dyn_cast<Argument>(ptr_operand)) {
                 dfval->point_to_set[gep_inst].insert(ptr_operand);
             } else {
                 value_set_type tmp = dfval->point_to_set[ptr_operand];
