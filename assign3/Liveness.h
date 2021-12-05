@@ -19,7 +19,7 @@
 
 #include "Dataflow.h"
 
-#define DEBUG
+// #define DEBUG
 
 using namespace llvm;
 
@@ -401,9 +401,13 @@ public:
         
         if (dfval->point_to_set[ptr_operand].empty()) {
             dfval->point_to_set[gep_inst].insert(ptr_operand);
-        } else {            
-            value_set_type tmp = dfval->point_to_set[ptr_operand];
-            dfval->point_to_set[gep_inst].insert(tmp.begin(), tmp.end());
+        } else {
+            if (dyn_cast<AllocaInst>(ptr_operand) || dyn_cast<BitCastInst>(ptr_operand)) {
+                dfval->point_to_set[gep_inst].insert(ptr_operand);
+            } else {
+                value_set_type tmp = dfval->point_to_set[ptr_operand];
+                dfval->point_to_set[gep_inst].insert(tmp.begin(), tmp.end());
+            }
         }
         
         #ifdef DEBUG
@@ -444,10 +448,12 @@ public:
             #endif
             // dfval->point_to_set[pointer_op].insert(value_op_set.begin(), value_op_set.end());
             return;
+
         } else if (dest_point_to_set.size() == 1) {
             #ifdef DEBUG
                 errs() << "Dest point has only one value;\n";
             #endif
+
             Value *v = *(dest_point_to_set.begin());
 
             if (dyn_cast<Function>(v)) {
@@ -460,6 +466,9 @@ public:
                     if (dyn_cast<AllocaInst>(x) || dyn_cast<BitCastInst>(x)) {
                         dfval->point_to_set[x].clear();
                         dfval->point_to_set[x].insert(value_op_set.begin(), value_op_set.end());
+                    } else if (dyn_cast<Function>(x)) {
+                        dfval->point_to_set[v].clear();
+                        dfval->point_to_set[v].insert(value_op_set.begin(), value_op_set.end());
                     }
                 }
             }
@@ -468,7 +477,7 @@ public:
                 dfval->point_to_set[v].clear();
                 dfval->point_to_set[v].insert(value_op_set.begin(), value_op_set.end());
             }
-            
+
         } else {
             #ifdef DEBUG
                 errs() << "Dest point has several values;\n";
