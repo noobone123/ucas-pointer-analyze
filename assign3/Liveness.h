@@ -448,20 +448,27 @@ public:
             #ifdef DEBUG
                 errs() << "Dest point has only one value;\n";
             #endif
-            for (auto v : dest_point_to_set) {
+            Value *v = *(dest_point_to_set.begin());
 
-                if (!dfval->point_to_set[v].empty()) {
-                    for (auto x : dfval->point_to_set[v]) {
-                        if (dyn_cast<AllocaInst>(x) || dyn_cast<BitCastInst>(x)) {
-                            dfval->point_to_set[x].clear();
-                            dfval->point_to_set[x].insert(value_op_set.begin(), value_op_set.end());
-                        }
+            if (dyn_cast<Function>(v)) {
+                dfval->point_to_set[pointer_op].clear();
+                dfval->point_to_set[pointer_op].insert(value_op_set.begin(), value_op_set.end());
+            }
+
+            else if (!dfval->point_to_set[v].empty()) {
+                for (auto x : dfval->point_to_set[v]) {
+                    if (dyn_cast<AllocaInst>(x) || dyn_cast<BitCastInst>(x)) {
+                        dfval->point_to_set[x].clear();
+                        dfval->point_to_set[x].insert(value_op_set.begin(), value_op_set.end());
                     }
-                } else {
-                    dfval->point_to_set[v].clear();
-                    dfval->point_to_set[v].insert(value_op_set.begin(), value_op_set.end());
                 }
             }
+
+            else {
+                dfval->point_to_set[v].clear();
+                dfval->point_to_set[v].insert(value_op_set.begin(), value_op_set.end());
+            }
+            
         } else {
             #ifdef DEBUG
                 errs() << "Dest point has several values;\n";
