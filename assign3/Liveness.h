@@ -425,7 +425,9 @@ public:
 
         // following snippets handle the value_op of store inst
         // if stored value is a function pointer
-        if (dfval->point_to_set[value_op].empty()) {
+        if (dyn_cast<Function>(value_op)) {
+            value_op_set.insert(value_op);
+        } else if (dyn_cast<AllocaInst>(value_op)) {
             value_op_set.insert(value_op);
         } else {
             value_set_type tmp = dfval->point_to_set[value_op];
@@ -447,8 +449,18 @@ public:
                 errs() << "Dest point has only one value;\n";
             #endif
             for (auto v : dest_point_to_set) {
-                dfval->point_to_set[v].clear();
-                dfval->point_to_set[v].insert(value_op_set.begin(), value_op_set.end());
+
+                if (!dfval->point_to_set[v].empty()) {
+                    for (auto x : dfval->point_to_set[v]) {
+                        if (dyn_cast<AllocaInst>(x) || dyn_cast<BitCastInst>(x)) {
+                            dfval->point_to_set[x].clear();
+                            dfval->point_to_set[x].insert(value_op_set.begin(), value_op_set.end());
+                        }
+                    }
+                } else {
+                    dfval->point_to_set[v].clear();
+                    dfval->point_to_set[v].insert(value_op_set.begin(), value_op_set.end());
+                }
             }
         } else {
             #ifdef DEBUG
@@ -481,9 +493,13 @@ public:
             if (dyn_cast<Function>(v)) {
                 loaded_res.insert(v);
                 continue;
+            } else if (dyn_cast<AllocaInst>(v)) {
+                loaded_res.insert(v);
+                continue;
+            } else {
+                value_set_type tmp = dfval->point_to_set[v];
+                loaded_res.insert(tmp.begin(), tmp.end());
             }
-            value_set_type tmp = dfval->point_to_set[v];
-            loaded_res.insert(tmp.begin(), tmp.end());
         }
         
         dfval->point_to_set[load_inst].insert(loaded_res.begin(), loaded_res.end());
