@@ -27,7 +27,7 @@ using value_set_type = std::set<Value *>;
 using pointer_to_set_type = std::map<Value *, value_set_type>;
 
 struct PointToInfo {
-   pointer_to_set_type point_to_set; // structure for storing the point to information
+    pointer_to_set_type point_to_set; // structure for storing the point to information
 
    PointToInfo() : point_to_set() {}
    PointToInfo(const PointToInfo & info) : point_to_set(info.point_to_set) {}
@@ -40,7 +40,12 @@ struct PointToInfo {
 inline raw_ostream& operator << (raw_ostream &out, const PointToInfo &info) {
     out << "The Liveness info are: \n";
     for (auto i : info.point_to_set) {
-        out << "Value(Key): \n" << (*i.first) << "\n";
+
+        if (auto func = dyn_cast<Function>(i.first))
+            out << "Value(Key): \n" << i.first->getName().str() << "\n";
+        else
+            out << "Value(Key): \n" << (*i.first) << "\n";
+
         out << "ValueSet:\n";
         for (auto j : i.second) {
             if (auto func = dyn_cast<Function>(j))
@@ -158,9 +163,12 @@ public:
         
         // If called function is external function, they only have a declare
         // just return
-        if (call_inst->getCalledFunction() && call_inst->getCalledFunction()->isDeclaration())
+        if (call_inst->getCalledFunction() && call_inst->getCalledFunction()->isDeclaration()) {
+            if (call_inst->getCalledFunction()->getName().str() == std::string("malloc"))
+                dfval->point_to_set[call_inst].clear();
             return;
-        
+        }
+
         // if called function in defined in the module, then we need to do 
         // Interprocedural analysis
         PointToInfo all_possible_info;
@@ -390,12 +398,10 @@ public:
             errs() << "Ptr operand of GEP_inst is: \n";
             errs() << (*ptr_operand) << "\n";
         #endif
-
-        // if GEP from alloca inst
-        if (dyn_cast<AllocaInst>(ptr_operand)) {
-            // just make map : GEP -> pointer
+        
+        if (dfval->point_to_set[ptr_operand].empty()) {
             dfval->point_to_set[gep_inst].insert(ptr_operand);
-        } else {
+        } else {            
             value_set_type tmp = dfval->point_to_set[ptr_operand];
             dfval->point_to_set[gep_inst].insert(tmp.begin(), tmp.end());
         }
@@ -419,59 +425,38 @@ public:
 
         // following snippets handle the value_op of store inst
         // if stored value is a function pointer
-        if (auto func = dyn_cast<Function>(value_op)) {
-            value_op_set.insert(func);
+        if (dfval->point_to_set[value_op].empty()) {
+            value_op_set.insert(value_op);
         } else {
             value_set_type tmp = dfval->point_to_set[value_op];
             value_op_set.insert(tmp.begin(), tmp.end());
         }
-
-        // if value_op is a allocinst and no values are filled in
-        // then just fill the value_op in
-        if (dyn_cast<AllocaInst>(value_op) && value_op_set.empty()) {
-            value_op_set.insert(value_op);
-        }
         
         // following snippets handle the pointer_op of store inst
         // we should be careful here since what we want to implement is flow-sensitive and path-insensitive analysis
-        if (auto gep_inst = dyn_cast<GetElementPtrInst>(pointer_op)) {
-            
-            dfval->point_to_set[pointer_op].clear();
-            dfval->point_to_set[pointer_op].insert(value_op_set.begin(), value_op_set.end());
-
-            Value *ptr_operand = gep_inst->getPointerOperand();
-
-            while (true) {
-                dfval->point_to_set[ptr_operand].clear();
-                dfval->point_to_set[ptr_operand].insert(value_op_set.begin(), value_op_set.end());
-
-                if (dyn_cast<AllocaInst>(ptr_operand)) 
-                    break;
-                else if (auto tmp = dyn_cast<LoadInst>(ptr_operand))
-                    ptr_operand = tmp->getPointerOperand();
-                else if (auto tmp = dyn_cast<GetElementPtrInst>(ptr_operand))
-                    ptr_operand = tmp->getPointerOperand();
-                else
-                    break;
-
-                #ifdef DEBUG
-                errs() << "In store debug: \n" << (*ptr_operand) << "\n";
-                #endif
+        value_set_type dest_point_to_set = dfval->point_to_set[pointer_op];
+        
+        if (dest_point_to_set.empty()) {
+            #ifdef DEBUG
+                errs() << "Dest point to set is empty;\n";
+            #endif
+            // dfval->point_to_set[pointer_op].insert(value_op_set.begin(), value_op_set.end());
+            return;
+        } else if (dest_point_to_set.size() == 1) {
+            #ifdef DEBUG
+                errs() << "Dest point has only one value;\n";
+            #endif
+            for (auto v : dest_point_to_set) {
+                dfval->point_to_set[v].clear();
+                dfval->point_to_set[v].insert(value_op_set.begin(), value_op_set.end());
             }
-            
-
-            // if there are any other points which point to the alloca_area
-            // then update all of them
-            for (auto &point_to_map : dfval->point_to_set) {
-                if (point_to_map.second.count(ptr_operand)) {
-                    point_to_map.second.insert(value_op_set.begin(), value_op_set.end());
-                    point_to_map.second.erase(ptr_operand);
-                }
-            }
-
         } else {
-            dfval->point_to_set[pointer_op].clear();
-            dfval->point_to_set[pointer_op].insert(value_op_set.begin(), value_op_set.end());
+            #ifdef DEBUG
+                errs() << "Dest point has several values;\n";
+            #endif
+            for (auto v : dest_point_to_set) {
+                dfval->point_to_set[v].insert(value_op_set.begin(), value_op_set.end());
+            }
         }
 
         #ifdef DEBUG
@@ -489,23 +474,19 @@ public:
             errs() << (*pointer_op) << "\n";
         #endif
 
-        if (auto gep_inst = dyn_cast<GetElementPtrInst>(pointer_op)) {
-            Value *ptr_operand = gep_inst->getPointerOperand();
+        value_set_type tmp1 = dfval->point_to_set[pointer_op];
+        value_set_type loaded_res;
 
-            if (dyn_cast<AllocaInst>(ptr_operand)) {
-                value_set_type tmp = dfval->point_to_set[ptr_operand];
-                dfval->point_to_set[load_inst].insert(tmp.begin(), tmp.end());
-                // convert alloca_inst in point_to_set[load_inst]
-                expand_alloca(dfval, load_inst);
-            } else {
-                value_set_type tmp = dfval->point_to_set[ptr_operand];
-                dfval->point_to_set[load_inst].insert(tmp.begin(), tmp.end());
+        for (auto v : tmp1) {
+            if (dyn_cast<Function>(v)) {
+                loaded_res.insert(v);
+                continue;
             }
-
-        } else {
-            value_set_type tmp = dfval->point_to_set[pointer_op];
-            dfval->point_to_set[load_inst].insert(tmp.begin(), tmp.end());
+            value_set_type tmp = dfval->point_to_set[v];
+            loaded_res.insert(tmp.begin(), tmp.end());
         }
+        
+        dfval->point_to_set[load_inst].insert(loaded_res.begin(), loaded_res.end());
 
         #ifdef DEBUG
             errs() << (*dfval) << "\n";
@@ -530,6 +511,30 @@ public:
             value_set_type tmp = dfval->point_to_set[src_op];
             dfval->point_to_set[dest_op].insert(tmp.begin(), tmp.end());
         }
+
+        #ifdef DEBUG
+            errs() << (*dfval) << "\n";
+        #endif
+    }
+
+    void handle_alloca_inst(AllocaInst* inst, PointToInfo* dfval, DataflowResult<PointToInfo>::Type *result) {
+        dfval->point_to_set[inst].clear();
+        
+        #ifdef DEBUG
+            errs() << (*dfval) << "\n";
+        #endif
+    }
+
+    void handle_bitcast_inst(BitCastInst* inst, PointToInfo* dfval, DataflowResult<PointToInfo>::Type *result) {
+        Value* get_operand = inst->getOperand(0);
+
+        #ifdef DEBUG
+            errs() << "BitCast Operand is: \n" << (*get_operand) << "\n";
+            errs() << (*dfval) << "\n";
+        #endif
+
+        value_set_type tmp = dfval->point_to_set[get_operand];
+        dfval->point_to_set[inst].insert(tmp.begin(), tmp.end());
 
         #ifdef DEBUG
             errs() << (*dfval) << "\n";
@@ -633,7 +638,20 @@ public:
             #endif
             handler_load_inst(load_inst, dfval, result);
         }
-
+        else if (AllocaInst *alloca_inst = dyn_cast<AllocaInst>(inst)) {
+            #ifdef DEBUG
+                errs() << "\n++++++++++++ Alloca Inst ++++++++++++\n";
+                errs() << (*alloca_inst) << "\n";
+            #endif
+            handle_alloca_inst(alloca_inst, dfval, result);
+        }
+        else if (BitCastInst *bitcast_inst = dyn_cast<BitCastInst>(inst)) {
+            #ifdef DEBUG
+                errs() << "\n++++++++++++ BitCast Inst ++++++++++++\n";
+                errs() << (*bitcast_inst) << "\n";
+            #endif
+            handle_bitcast_inst(bitcast_inst, dfval, result);
+        }
     }
 };
 
