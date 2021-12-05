@@ -446,7 +446,12 @@ public:
             #ifdef DEBUG
                 errs() << "Dest point to set is empty;\n";
             #endif
-            // dfval->point_to_set[pointer_op].insert(value_op_set.begin(), value_op_set.end());
+
+            if (dyn_cast<BitCastInst>(pointer_op)) {
+                dfval->point_to_set[pointer_op].clear();
+                dfval->point_to_set[pointer_op].insert(value_op_set.begin(), value_op_set.end());
+            }
+
             return;
 
         } else if (dest_point_to_set.size() == 1) {
