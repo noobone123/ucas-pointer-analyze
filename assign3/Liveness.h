@@ -19,7 +19,7 @@
 
 #include "Dataflow.h"
 
-#define DEBUG
+// #define DEBUG
 
 using namespace llvm;
 
@@ -94,13 +94,14 @@ public:
     std::map<CallInst*, std::set<Function*> > callinst_func_map;
     std::set<Function *> func_worklist;
     std::vector<ConstantInt*> heap_set;
+    std::map<Value*, ConstantInt*> value_heap_map;
     
     // merged_outval_set will be updated by ret_inst
     std::map<Function*, PointToInfo> merged_outval_set;
     // following set stores the origin callinst_outval_set
     std::map<CallInst*, PointToInfo> callinst_outval_set;
 
-    LivenessVisitor(std::vector<ConstantInt*> &heap_set ) : heap_set(heap_set), callinst_func_map(), func_worklist() {}
+    LivenessVisitor(std::vector<ConstantInt*> &heap_set ) : heap_set(heap_set), callinst_func_map(), func_worklist(), value_heap_map() {}
 
     BasicBlock* inst_to_basic(Instruction *inst) {
         return inst->getParent();
@@ -129,6 +130,16 @@ public:
         }
     }
 
+    void heap_abstract_alloc(Instruction *inst, PointToInfo *dfval) {
+        if (value_heap_map.find(inst) == value_heap_map.end()) {
+            ConstantInt* heap_num = heap_set.back();
+            heap_set.pop_back();
+            value_heap_map.insert(std::make_pair(inst, heap_num));
+            dfval->point_to_set[inst].insert(value_heap_map[inst]);
+        } else {
+            dfval->point_to_set[inst].insert(value_heap_map[inst]);
+        }
+    }
 
     // in our algorithm, handle_call_inst will update callee's entry point_to_set,
     void handle_call_inst(CallInst *call_inst, PointToInfo* dfval, DataflowResult<PointToInfo>::Type *result) {
@@ -175,11 +186,7 @@ public:
         // just return
         if (call_inst->getCalledFunction() && call_inst->getCalledFunction()->isDeclaration()) {
             if (call_inst->getCalledFunction()->getName().str() == std::string("malloc")) {
-                if (dfval->point_to_set[call_inst].empty()) {
-                    ConstantInt* heap_num = heap_set.back();
-                    dfval->point_to_set[call_inst].insert(heap_num);
-                    heap_set.pop_back();
-                }
+                heap_abstract_alloc(call_inst, dfval);
             }
             return;
         }
@@ -533,11 +540,7 @@ public:
 
     void handle_alloca_inst(AllocaInst* inst, PointToInfo* dfval, DataflowResult<PointToInfo>::Type *result) {
 
-        if (dfval->point_to_set[inst].empty()) {
-            ConstantInt* heap_num = heap_set.back();
-            dfval->point_to_set[inst].insert(heap_num);
-            heap_set.pop_back();
-        }
+        heap_abstract_alloc(inst, dfval);
         
         #ifdef DEBUG
             errs() << heap_set;
