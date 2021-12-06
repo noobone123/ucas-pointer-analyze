@@ -89,6 +89,11 @@ inline raw_ostream& operator << (raw_ostream &out, const value_set_type value_se
     return out;
 }
 
+void point_to_set_debugPrint(Instruction* inst, PointToInfo* dfval) {
+    if (inst->getFunction()->getName().str() == "make_simple_alias")
+        errs() << (*dfval) << "\n";
+}
+
 class LivenessVisitor : public DataflowVisitor<struct PointToInfo> {
 public:
     std::map<CallInst*, std::set<Function*> > callinst_func_map;
@@ -198,7 +203,7 @@ public:
         for (auto callee : callees) {
             #ifdef DEBUG
                 errs() << "Handling interprocedural analysis ...\n";
-                errs() << "Called function is : " << (*callee) << "\n"; 
+                errs() << "Called function is : " << callee->getName().str() << "\n"; 
             #endif
 
             std::map<Value*, Argument*> func_call_argmap;
@@ -296,7 +301,7 @@ public:
             errs() << "\nAdded func worklist are: ";
             errs() << func_worklist;
             errs() << "\nAt the end of Callinst handler\n";
-            errs() << (*dfval) << "\n";
+            point_to_set_debugPrint(call_inst, dfval);
         #endif
     }
 
@@ -385,7 +390,7 @@ public:
             errs() << "\nAdded func worklist are: ";
             errs() << func_worklist;
             errs() << "\nAt the end of Ret_inst" << "\n";
-            errs() << (*dfval) << "\n";
+            point_to_set_debugPrint(ret_inst, dfval);
         #endif
 
         return;
@@ -407,7 +412,7 @@ public:
             }
         }
         #ifdef DEBUG
-            errs() << (*dfval) << "\n";
+            point_to_set_debugPrint(phi_node_inst, dfval);
         #endif
     }
 
@@ -425,7 +430,7 @@ public:
         dfval->point_to_set[gep_inst].insert(tmp.begin(), tmp.end());
         
         #ifdef DEBUG
-            errs() << (*dfval) << "\n";
+            point_to_set_debugPrint(gep_inst, dfval);
         #endif
     }
 
@@ -482,7 +487,7 @@ public:
         }
 
         #ifdef DEBUG
-            errs() << (*dfval) << "\n";
+            point_to_set_debugPrint(store_inst, dfval);
         #endif
     }
 
@@ -512,7 +517,7 @@ public:
         dfval->point_to_set[load_inst].insert(loaded_res.begin(), loaded_res.end());
 
         #ifdef DEBUG
-            errs() << (*dfval) << "\n";
+            point_to_set_debugPrint(load_inst, dfval);
         #endif
     }
 
@@ -531,21 +536,27 @@ public:
             auto dest_heap_set = dfval->point_to_set[dest_op];
             auto src_heap_set = dfval->point_to_set[src_op];
 
-            auto dest_heap = dyn_cast<ConstantInt>(*(dest_heap_set.begin()));
-            auto src_heap = dyn_cast<ConstantInt>(*(src_heap_set.begin()));
+            if (!(dest_heap_set.empty()) && !(src_heap_set.empty())) {
+                auto dest_heap = dyn_cast<ConstantInt>(*(dest_heap_set.begin()));
+                auto src_heap = dyn_cast<ConstantInt>(*(src_heap_set.begin()));
 
-            #ifdef DEBUG
-                errs() << "Dest heap is: \n" << *(dest_heap) << "\n";
-                errs() << "Src heap is: \n" << *(src_heap) << "\n";
-            #endif
+                #ifdef DEBUG
+                    errs() << "Dest heap is: \n" << *(dest_heap) << "\n";
+                    errs() << "Src heap is: \n" << *(src_heap) << "\n";
+                #endif
 
-            dfval->point_to_set[dest_heap].clear();
-            value_set_type tmp = dfval->point_to_set[src_heap];
-            dfval->point_to_set[dest_heap].insert(tmp.begin(), tmp.end());
+                dfval->point_to_set[dest_heap].clear();
+                value_set_type tmp = dfval->point_to_set[src_heap];
+                dfval->point_to_set[dest_heap].insert(tmp.begin(), tmp.end());
+            } else {
+                #ifdef DEBUG
+                    errs() << "Dest Or Src is empty.\n";
+                #endif
+            }
         }
 
         #ifdef DEBUG
-            errs() << (*dfval) << "\n";
+            // point_to_set_debugPrint(inst, dfval);
         #endif
     }
 
@@ -554,8 +565,8 @@ public:
         heap_abstract_alloc(inst, dfval);
         
         #ifdef DEBUG
-            errs() << heap_set;
-            errs() << (*dfval) << "\n";
+            // errs() << heap_set;
+            // errs() << (*dfval) << "\n";
         #endif
     }
 
@@ -570,7 +581,7 @@ public:
         dfval->point_to_set[inst].insert(tmp.begin(), tmp.end());
 
         #ifdef DEBUG
-            errs() << (*dfval) << "\n";
+            // errs() << (*dfval) << "\n";
         #endif
     }
 
