@@ -78,7 +78,7 @@ int moo(char x, int op1, int op2) {
 
     struct fptr* t_fptr = 0;
 
-    t_fptr = clever(op1, op2, &m_fptr, y_fptr.wfptr); // m_fptr.sptr.p_fptr = plus y_fptr.wfptr->sptr = minus
+    t_fptr = clever(op1, op2, &m_fptr, y_fptr.wfptr);
     t_fptr->p_fptr(op1, op2);
     m_fptr.sptr->p_fptr(op1,op2);
     swap_w(&x_fptr,&w_fptr); // w_fptr = x_fptr

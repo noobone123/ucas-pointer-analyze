@@ -19,7 +19,7 @@
 
 #include "Dataflow.h"
 
-// #define DEBUG
+#define DEBUG
 
 using namespace llvm;
 

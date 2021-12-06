@@ -1,15 +1,15 @@
 #include <stdlib.h>
 struct fptr
 {
-int (*p_fptr)(int, int);
+    int (*p_fptr)(int, int);
 };
 struct fsptr
 {
-struct fptr * sptr;
+    struct fptr * sptr;
 };
 struct wfsptr
 {
-  struct fsptr * wfptr;
+    struct fsptr * wfptr;
 };
 int plus(int a, int b) {
    return a+b;
