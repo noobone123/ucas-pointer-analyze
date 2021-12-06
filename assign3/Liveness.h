@@ -90,8 +90,7 @@ inline raw_ostream& operator << (raw_ostream &out, const value_set_type value_se
 }
 
 void point_to_set_debugPrint(Instruction* inst, PointToInfo* dfval) {
-    if (inst->getFunction()->getName().str() == "make_simple_alias")
-        errs() << (*dfval) << "\n";
+    errs() << (*dfval) << "\n";
 }
 
 class LivenessVisitor : public DataflowVisitor<struct PointToInfo> {
@@ -110,29 +109,6 @@ public:
 
     BasicBlock* inst_to_basic(Instruction *inst) {
         return inst->getParent();
-    }
-
-    void expand_alloca(PointToInfo *dfval, Instruction *inst) {
-        while (true) {
-            bool has_alloca_inst = false;
-            AllocaInst* tmp_inst;
-            value_set_type tmp_val_set;
-            for (auto v : dfval->point_to_set[inst]) {
-                if (auto alloca = dyn_cast<AllocaInst>(v)) {
-                    has_alloca_inst = true;
-                    tmp_inst = alloca;
-                    tmp_val_set = dfval->point_to_set[v];
-                    break;
-                }
-            }
-
-            if (has_alloca_inst) {
-                dfval->point_to_set[inst].erase(tmp_inst);
-                dfval->point_to_set[inst].insert(tmp_val_set.begin(), tmp_val_set.end());
-            } else {
-                break;
-            }
-        }
     }
 
     void heap_abstract_alloc(Instruction *inst, PointToInfo *dfval) {
@@ -405,8 +381,10 @@ public:
             #endif
             // directly point to Function
             if (auto func = dyn_cast<Function>(value)) {
+                // dfval->point_to_set[phi_node_inst].clear();
                 dfval->point_to_set[phi_node_inst].insert(func);
             } else {
+                // dfval->point_to_set[phi_node_inst].clear();
                 value_set_type tmp = dfval->point_to_set[value];
                 dfval->point_to_set[phi_node_inst].insert(tmp.begin(), tmp.end());
             }
@@ -481,7 +459,7 @@ public:
             #endif
             for (auto v : dest_point_to_set) {
                 // different from algorithms in PPT
-                dfval->point_to_set[v].clear();
+                // dfval->point_to_set[v].clear();
                 dfval->point_to_set[v].insert(value_op_set.begin(), value_op_set.end());
             }
         }
