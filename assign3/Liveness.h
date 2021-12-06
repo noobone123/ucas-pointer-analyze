@@ -118,6 +118,8 @@ public:
             value_heap_map.insert(std::make_pair(inst, heap_num));
             dfval->point_to_set[inst].insert(value_heap_map[inst]);
         } else {
+            ConstantInt *heap_num = value_heap_map[inst];
+            dfval->point_to_set[heap_num].clear();
             dfval->point_to_set[inst].insert(value_heap_map[inst]);
         }
     }
@@ -458,8 +460,6 @@ public:
                 errs() << "Dest point has several values;\n";
             #endif
             for (auto v : dest_point_to_set) {
-                // different from algorithms in PPT
-                // dfval->point_to_set[v].clear();
                 dfval->point_to_set[v].insert(value_op_set.begin(), value_op_set.end());
             }
         }
@@ -517,10 +517,10 @@ public:
             value_set_type src_merged_res;
 
             for (auto s : src_heap_set) {
+                value_set_type heap_value_set = dfval->point_to_set[s];
                 #ifdef DEBUG
                     errs() << "Src heap: \n" << *(s) << "\n";
                 #endif
-                value_set_type heap_value_set = dfval->point_to_set[s];
                 src_merged_res.insert(heap_value_set.begin(), heap_value_set.end());
             }
 
@@ -534,7 +534,7 @@ public:
         }
 
         #ifdef DEBUG
-            // point_to_set_debugPrint(inst, dfval);
+            point_to_set_debugPrint(inst, dfval);
         #endif
     }
 
