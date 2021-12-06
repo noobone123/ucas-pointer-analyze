@@ -79,7 +79,14 @@ struct FuncPtrPass : public ModulePass {
                 func_worklist.insert(&F);
         }
 
-        LivenessVisitor my_visitor;
+        std::vector<ConstantInt*> heap_abstract_set;
+        LLVMContext &context = getGlobalContext();
+        for (unsigned int i = 100; i >= 1; i --) {
+            ConstantInt* heap_num = ConstantInt::get(context, APInt(32, i, false));
+            heap_abstract_set.push_back(heap_num);
+        }
+
+        LivenessVisitor my_visitor(heap_abstract_set);
         DataflowResult<PointToInfo>::Type result;
 
         #ifdef DEBUG

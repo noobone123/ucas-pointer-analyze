@@ -19,7 +19,7 @@
 
 #include "Dataflow.h"
 
-// #define DEBUG
+#define DEBUG
 
 using namespace llvm;
 
@@ -68,6 +68,15 @@ inline raw_ostream& operator << (raw_ostream &out, const std::set<Function*> &ca
     return out;
 }
 
+inline raw_ostream& operator << (raw_ostream &out, const std::vector<ConstantInt*> &heap_set) {
+    out << "\n heap values are: \n";
+    for (auto n : heap_set) {
+        out << n->getValue() << ", ";
+    }
+    out << "\n";
+    return out;
+}
+
 inline raw_ostream& operator << (raw_ostream &out, const value_set_type value_set) {
     for (auto j : value_set) {
         if (auto func = dyn_cast<Function>(j))
@@ -84,13 +93,14 @@ class LivenessVisitor : public DataflowVisitor<struct PointToInfo> {
 public:
     std::map<CallInst*, std::set<Function*> > callinst_func_map;
     std::set<Function *> func_worklist;
+    std::vector<ConstantInt*> heap_set;
     
     // merged_outval_set will be updated by ret_inst
     std::map<Function*, PointToInfo> merged_outval_set;
     // following set stores the origin callinst_outval_set
     std::map<CallInst*, PointToInfo> callinst_outval_set;
 
-    LivenessVisitor() : callinst_func_map(), func_worklist() {}
+    LivenessVisitor(std::vector<ConstantInt*> &heap_set ) : heap_set(heap_set), callinst_func_map(), func_worklist() {}
 
     BasicBlock* inst_to_basic(Instruction *inst) {
         return inst->getParent();
@@ -559,9 +569,15 @@ public:
     }
 
     void handle_alloca_inst(AllocaInst* inst, PointToInfo* dfval, DataflowResult<PointToInfo>::Type *result) {
-        dfval->point_to_set[inst].clear();
+
+        if (dfval->point_to_set[inst].empty()) {
+            ConstantInt* heap_num = heap_set.back();
+            dfval->point_to_set[inst].insert(heap_num);
+            heap_set.pop_back();
+        }
         
         #ifdef DEBUG
+            errs() << heap_set;
             errs() << (*dfval) << "\n";
         #endif
     }
