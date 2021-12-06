@@ -174,8 +174,13 @@ public:
         // If called function is external function, they only have a declare
         // just return
         if (call_inst->getCalledFunction() && call_inst->getCalledFunction()->isDeclaration()) {
-            if (call_inst->getCalledFunction()->getName().str() == std::string("malloc"))
-                dfval->point_to_set[call_inst].clear();
+            if (call_inst->getCalledFunction()->getName().str() == std::string("malloc")) {
+                if (dfval->point_to_set[call_inst].empty()) {
+                    ConstantInt* heap_num = heap_set.back();
+                    dfval->point_to_set[call_inst].insert(heap_num);
+                    heap_set.pop_back();
+                }
+            }
             return;
         }
 
@@ -409,16 +414,8 @@ public:
             errs() << (*ptr_operand) << "\n";
         #endif
         
-        if (dfval->point_to_set[ptr_operand].empty()) {
-            dfval->point_to_set[gep_inst].insert(ptr_operand);
-        } else {
-            if (dyn_cast<AllocaInst>(ptr_operand) || dyn_cast<BitCastInst>(ptr_operand) || dyn_cast<Argument>(ptr_operand)) {
-                dfval->point_to_set[gep_inst].insert(ptr_operand);
-            } else {
-                value_set_type tmp = dfval->point_to_set[ptr_operand];
-                dfval->point_to_set[gep_inst].insert(tmp.begin(), tmp.end());
-            }
-        }
+        value_set_type tmp = dfval->point_to_set[ptr_operand];
+        dfval->point_to_set[gep_inst].insert(tmp.begin(), tmp.end());
         
         #ifdef DEBUG
             errs() << (*dfval) << "\n";
@@ -441,8 +438,6 @@ public:
         // if stored value is a function pointer
         if (dyn_cast<Function>(value_op)) {
             value_op_set.insert(value_op);
-        } else if (dyn_cast<AllocaInst>(value_op)) {
-            value_op_set.insert(value_op);
         } else {
             value_set_type tmp = dfval->point_to_set[value_op];
             value_op_set.insert(tmp.begin(), tmp.end());
@@ -456,12 +451,6 @@ public:
             #ifdef DEBUG
                 errs() << "Dest point to set is empty;\n";
             #endif
-
-            if (dyn_cast<BitCastInst>(pointer_op)) {
-                dfval->point_to_set[pointer_op].clear();
-                dfval->point_to_set[pointer_op].insert(value_op_set.begin(), value_op_set.end());
-            }
-
             return;
 
         } else if (dest_point_to_set.size() == 1) {
@@ -470,32 +459,9 @@ public:
             #endif
 
             Value *v = *(dest_point_to_set.begin());
-
-            if (dyn_cast<Function>(v)) {
-                dfval->point_to_set[pointer_op].clear();
-                dfval->point_to_set[pointer_op].insert(value_op_set.begin(), value_op_set.end());
-            }
-
-            else if (!dfval->point_to_set[v].empty()) {
-                for (auto x : dfval->point_to_set[v]) {
-                    // if (dyn_cast<AllocaInst>(x) || dyn_cast<BitCastInst>(x)) {
-                    //     dfval->point_to_set[x].clear();
-                    //     dfval->point_to_set[x].insert(value_op_set.begin(), value_op_set.end());
-                    // } else if (dyn_cast<Function>(x)) {
-                    //     dfval->point_to_set[v].clear();
-                    //     dfval->point_to_set[v].insert(value_op_set.begin(), value_op_set.end());
-                    // }
-                    if (dyn_cast<Function>(x)) {
-                        dfval->point_to_set[v].clear();
-                        dfval->point_to_set[v].insert(value_op_set.begin(), value_op_set.end());
-                    }
-                }
-            }
-
-            else {
-                dfval->point_to_set[v].clear();
-                dfval->point_to_set[v].insert(value_op_set.begin(), value_op_set.end());
-            }
+            
+            dfval->point_to_set[v].clear();
+            dfval->point_to_set[v].insert(value_op_set.begin(), value_op_set.end());
 
         } else {
             #ifdef DEBUG
@@ -526,9 +492,6 @@ public:
 
         for (auto v : tmp1) {
             if (dyn_cast<Function>(v)) {
-                loaded_res.insert(v);
-                continue;
-            } else if (dyn_cast<AllocaInst>(v)) {
                 loaded_res.insert(v);
                 continue;
             } else {
@@ -587,7 +550,6 @@ public:
 
         #ifdef DEBUG
             errs() << "BitCast Operand is: \n" << (*get_operand) << "\n";
-            errs() << (*dfval) << "\n";
         #endif
 
         value_set_type tmp = dfval->point_to_set[get_operand];
