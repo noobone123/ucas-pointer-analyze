@@ -19,7 +19,7 @@
 
 #include "Dataflow.h"
 
-// #define DEBUG
+#define DEBUG
 
 using namespace llvm;
 
@@ -475,6 +475,8 @@ public:
                 errs() << "Dest point has several values;\n";
             #endif
             for (auto v : dest_point_to_set) {
+                // different from algorithms in PPT
+                dfval->point_to_set[v].clear();
                 dfval->point_to_set[v].insert(value_op_set.begin(), value_op_set.end());
             }
         }
@@ -515,22 +517,31 @@ public:
     }
 
     void handle_memcpy_inst(MemCpyInst* inst, PointToInfo* dfval, DataflowResult<PointToInfo>::Type *result) {
-        Value* dest_op = inst->getArgOperand(0);
-        Value* src_op = inst->getArgOperand(1);
-        if (dest_op && dest_op) {
-            while(auto bitcast_inst = dyn_cast<BitCastInst>(dest_op))
-                dest_op = bitcast_inst->getOperand(0);
-            while(auto bitcast_inst = dyn_cast<BitCastInst>(src_op))
-                src_op = bitcast_inst->getOperand(0);
+        Value* dest = inst->getArgOperand(0);
+        Value* src = inst->getArgOperand(1);
+        if (dest && src) {
+            auto dest_op = dyn_cast<BitCastInst>(dest);
+            auto src_op = dyn_cast<BitCastInst>(src);
 
             #ifdef DEBUG
-                errs() << "Dest value is: \n" << (*dest_op) << "\n";
-                errs() << "Src value is: \n" << (*src_op) << "\n";
+                errs() << "Dest op is: \n" << (*dest_op) << "\n";
+                errs() << "Src op is: \n" << (*src_op) << "\n";
             #endif
 
-            dfval->point_to_set[dest_op].clear();
-            value_set_type tmp = dfval->point_to_set[src_op];
-            dfval->point_to_set[dest_op].insert(tmp.begin(), tmp.end());
+            auto dest_heap_set = dfval->point_to_set[dest_op];
+            auto src_heap_set = dfval->point_to_set[src_op];
+
+            auto dest_heap = dyn_cast<ConstantInt>(*(dest_heap_set.begin()));
+            auto src_heap = dyn_cast<ConstantInt>(*(src_heap_set.begin()));
+
+            #ifdef DEBUG
+                errs() << "Dest heap is: \n" << *(dest_heap) << "\n";
+                errs() << "Src heap is: \n" << *(src_heap) << "\n";
+            #endif
+
+            dfval->point_to_set[dest_heap].clear();
+            value_set_type tmp = dfval->point_to_set[src_heap];
+            dfval->point_to_set[dest_heap].insert(tmp.begin(), tmp.end());
         }
 
         #ifdef DEBUG
