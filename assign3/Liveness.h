@@ -124,7 +124,6 @@ public:
         }
     }
 
-    // in our algorithm, handle_call_inst will update callee's entry point_to_set,
     void handle_call_inst(CallInst *call_inst, PointToInfo* dfval, DataflowResult<PointToInfo>::Type *result) {
 
         Value *callee_value = call_inst->getCalledOperand();
@@ -165,8 +164,7 @@ public:
         callinst_func_map[call_inst].clear();
         callinst_func_map[call_inst].insert(callees.begin(), callees.end());
         
-        // If called function is external function, they only have a declare
-        // just return
+        // If called function is external function malloc
         if (call_inst->getCalledFunction() && call_inst->getCalledFunction()->isDeclaration()) {
             if (call_inst->getCalledFunction()->getName().str() == std::string("malloc")) {
                 heap_abstract_alloc(call_inst, dfval);
@@ -255,6 +253,8 @@ public:
             merge(&callee_bb_inval, tmp_PointToInfo);
 
             #ifdef DEBUG
+                errs() << "\nOld callee_bb_inval: \n";
+                errs() << old_callee_bb_inval << "\n";
                 errs() << "\nNew Callee_bb_inval: \n";
                 errs() << callee_bb_inval << "\n";
                 errs() << "+++++++++++++\n";
