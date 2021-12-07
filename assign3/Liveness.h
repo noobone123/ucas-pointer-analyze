@@ -19,7 +19,7 @@
 
 #include "Dataflow.h"
 
-#define DEBUG
+// #define DEBUG
 
 using namespace llvm;
 
@@ -210,6 +210,7 @@ public:
             // we use a temp value to pass pointer-to-set to callee
             // following is sensitive PointToInfo from previous instructions
             PointToInfo tmp_PointToInfo = *dfval;
+            PointToInfo callee_relevant_PoinToInfo;
 
 
             // should update point_to_set of interprocedural analysis here
@@ -223,6 +224,7 @@ public:
                     if (point_to_info.second.count(argmap.first)) {
                         point_to_info.second.erase(argmap.first);
                         point_to_info.second.insert(argmap.second);
+                        callee_relevant_PoinToInfo.point_to_set.insert(point_to_info);
                     }
                 }
             }
@@ -235,14 +237,19 @@ public:
                     tmp_PointToInfo.point_to_set.erase(argmap.first);
                     // insert caller arg's value set to callee arg's value set
                     tmp_PointToInfo.point_to_set[argmap.second].insert(values.begin(), values.end());
+
+                    callee_relevant_PoinToInfo.point_to_set[argmap.second].insert(values.begin(), values.end());
                 }
             }
 
             // if caller's arg is a function pointer 
             for (auto argmap : func_call_argmap) {
                 // let callee's arg point to caller's function arg value
-                if (isa<Function>(argmap.first))
+                if (isa<Function>(argmap.first)) {
                     tmp_PointToInfo.point_to_set[argmap.second].insert(argmap.first);
+                    
+                    callee_relevant_PoinToInfo.point_to_set[argmap.second].insert(argmap.first);
+                }
             }
 
             // #ifdef DEBUG
@@ -250,6 +257,7 @@ public:
             //     errs() << old_callee_bb_inval;
             // #endif
 
+            // merge(&callee_bb_inval, callee_relevant_PoinToInfo);
             merge(&callee_bb_inval, tmp_PointToInfo);
 
             #ifdef DEBUG
@@ -271,8 +279,10 @@ public:
                 func_worklist.insert(callee);
         }
 
+
         *dfval = all_possible_info;
-        
+        // strong_merge(dfval, all_possible_info);
+
         callinst_outval_set[call_inst] = *dfval;
 
         #ifdef DEBUG
@@ -316,10 +326,15 @@ public:
             if (ret_value && ret_value->getType()->isPointerTy()) {
                 value_set_type tmp = dfval->point_to_set[ret_value];
 
+                #ifdef DEBUG
+                    errs() << "\nReturn value Type is a Pointer\n";
+                    errs() << tmp << "\n";
+                #endif
                 // tmp_point_to_info.point_to_set[call_inst].insert(tmp.begin(), tmp.end());
 
+                // dfval->point_to_set[call_inst].clear();
                 dfval->point_to_set[call_inst].insert(tmp.begin(), tmp.end());
-                dfval->point_to_set.erase(ret_value);
+                // dfval->point_to_set.erase(ret_value);
             }
             
             // map args
@@ -594,6 +609,15 @@ public:
             Value* key = point_to_info.first;
             value_set_type tmp = point_to_info.second;
             dest->point_to_set[key].insert(tmp.begin(), tmp.end());
+        }
+    }
+
+    // overwrite the value of same key
+    void strong_merge(PointToInfo * dest, const PointToInfo & src) {
+        for (auto point_to_info : src.point_to_set) {
+            Value* key = point_to_info.first;
+            value_set_type tmp = point_to_info.second;
+            dest->point_to_set[key] = tmp;
         }
     }
 
