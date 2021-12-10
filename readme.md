@@ -6,6 +6,9 @@ I implemented a **flow-sensitive** with **context-insensitive**/**path-insensiti
 ## compile script
 compile script is used for generate bc/ll files for debugging/test
 
+## Result
+This project can pass 34/35 of all test samples.
+
 ## grade script
 
 ### usage
