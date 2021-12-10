@@ -1,10 +1,10 @@
 # LLVM3 Point-Analyse
 
 ## About
-    I implemented a **flow-sensitive** with **context-insensitive**/**path-insensitive** and **interprocedural** pointer analysis.
+I implemented a **flow-sensitive** with **context-insensitive**/**path-insensitive** and **interprocedural** pointer analysis.
 
 ## compile script
-    compile script is used for generate bc/ll files for debugging/test
+compile script is used for generate bc/ll files for debugging/test
 
 ## grade script
 
